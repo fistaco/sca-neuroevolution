@@ -92,26 +92,23 @@ class GeneticAlgorithm:
         """
         new_population = np.empty(self.pop_size, dtype=object)
 
-        # Compute the sum of all individuals' fitness values
-        fitness_sum = np.sum(np.fromiter(
-            (indiv.fitness for indiv in self.population),
+        # Invert fitnesses because fitness is minimised and min. fitness = 255
+        inverted_fitnesses = np.fromiter(
+            (255 - indiv.fitness for indiv in self.population),
             dtype=np.int16
-        ))
+        )
+
+        # Compute their sum so we can compute selection probabilities
+        inv_fitness_sum = np.sum(inverted_fitnesses)
 
         # Compute individual fitness probabilities and sum them up cumulatively
-        # to construct sections of the roulette wheel, while keeping in mind
-        # that a smaller fitness value is better in our scenario.
+        # to construct sections of the roulette wheel
         size = self.pop_size*2
         cumulative_select_probs = np.zeros(size, dtype=float)
         cumulative_prob = 0.0
         for i in range(size):
-            # Max. key rank is 255, so invert fitness f as (255 - f)
-            inverted_fitness = 255 - self.population[i].fitness
-            cumulative_prob += inverted_fitness / fitness_sum
-
+            cumulative_prob += inverted_fitnesses[i] / inv_fitness_sum
             cumulative_select_probs[i] = cumulative_prob
-
-        print(f"======== Cumulative probs: ========\n{cumulative_select_probs}")
 
         # Build the new population by "spinning the wheel" repeatedly
         for i in range(self.pop_size):
