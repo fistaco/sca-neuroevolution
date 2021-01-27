@@ -1,4 +1,4 @@
-import random as rand
+import numpy as np
 from copy import deepcopy
 from tensorflow import keras
 
@@ -26,10 +26,10 @@ class NeuralNetworkGenome:
                 if np.random.uniform() < mut_rate:
                     mut_val = np.random.uniform() * 2 * mut_power - mut_power
                     child.weights[i][..., j] += mut_val
-        
+
         # Manually reconfigure model weights
         self.model.set_weights(self.weights)
-        
+
         return child
 
     def crossover(self, other, apply_fitness_inheritance=False, fi_decay=0.2):
@@ -46,10 +46,10 @@ class NeuralNetworkGenome:
                 # Replace with uniform probability
                 if np.random.uniform() < 0.5:
                     child.weights[i][..., j] = other_w
-        
+
         # Manually reconfigure model weights
         self.model.set_weights(self.weights)
-        
+
         return child
 
     def evaluate_fitness(self, x_atk, y_atk, ptexts, true_subkey):
@@ -75,7 +75,7 @@ class NeuralNetworkGenome:
 
         self.fitness = key_rank
         return key_rank
-    
+
     def clone(self):
         """
         Returns a deep copy of this genome.
