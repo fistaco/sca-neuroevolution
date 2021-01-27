@@ -19,7 +19,7 @@ class NeuralNetworkGenome:
         from the range [-mut_power, mut_power] if the mut_rate check passes for
         that weight. Returns the resulting child.
         """
-        child = deepcopy(self)
+        child = self.clone()
 
         for i in range(len(self.weights)):  # Iterate over layers
             for j in range(self.weights[i].shape[-1]):  # Iterate over weights
@@ -37,7 +37,7 @@ class NeuralNetworkGenome:
         Applies crossover by uniformly selecting weights from both parents and
         returns the resulting child.
         """
-        child = deepcopy(self)
+        child = self.clone()
 
         for i in range(len(self.weights)):  # Iterate over layers
             for j in range(self.weights[i].shape[-1]):  # Iterate over weights
@@ -51,7 +51,6 @@ class NeuralNetworkGenome:
         self.model.set_weights(self.weights)
         
         return child
-                    
 
     def evaluate_fitness(self, x_atk, y_atk, ptexts, true_subkey):
         """
@@ -76,3 +75,14 @@ class NeuralNetworkGenome:
 
         self.fitness = key_rank
         return key_rank
+    
+    def clone(self):
+        """
+        Returns a deep copy of this genome.
+        """
+        clone = NeuralNetworkGenome(self.model.clone())
+        clone.weights = deepcopy(self.weights)
+        clone.model.set_weights(clone.weights)
+        clone.fitness = self.fitness
+
+        return clone
