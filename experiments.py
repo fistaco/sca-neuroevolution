@@ -41,7 +41,7 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
     print(f"Key rank on test set: {key_rank}")
 
 
-def small_cnn_sgd_sca(save=True):
+def small_cnn_sgd_sca(save=True, subkey_idx=2):
     # Load the ASCAD data set with 700 points per trace
     PATH = "./../ASCAD_data/ASCAD_databases/ASCAD.h5"
     (x, y, x_atk, y_atk, train_meta, atk_meta) = \
@@ -54,11 +54,11 @@ def small_cnn_sgd_sca(save=True):
     n_epochs = 50
     batch_size = 50
     loss_fn = tf.keras.losses.CategoricalCrossentropy()
-    optimizer = tf.keras.optimizers.Adam(learning_rate=5e-4)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=1e-5)
 
     # Declare easily accessible variables for relevant metadata
     full_key = atk_meta['key'][0]
-    target_subkey = full_key[1]
+    target_subkey = full_key[subkey_idx]
     atk_ptexts = atk_meta['plaintext']
 
     # Convert labels to one-hot encoding probabilities
@@ -75,7 +75,7 @@ def small_cnn_sgd_sca(save=True):
 
     # Save the model if desired
     if save:
-        cnn.save('./trained_models/efficient_cnn_ascad_model_31kw.h5')
+        cnn.save('./trained_models/efficient_cnn_ascad_model_17kw.h5')
 
     # Attack with the trained model
     key_rank = exec_sca(cnn, x_atk_reshaped, y_atk, atk_ptexts, target_subkey, subkey_idx=1)
