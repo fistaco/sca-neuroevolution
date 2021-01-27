@@ -80,7 +80,7 @@ class NeuralNetworkGenome:
         """
         Returns a deep copy of this genome.
         """
-        clone = NeuralNetworkGenome(self.model.clone())
+        clone = NeuralNetworkGenome(keras.models.clone_model(self.model))
         clone.weights = deepcopy(self.weights)
         clone.model.set_weights(clone.weights)
         clone.fitness = self.fitness
