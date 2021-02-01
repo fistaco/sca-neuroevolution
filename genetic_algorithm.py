@@ -1,13 +1,20 @@
+import multiprocessing.dummy as mp
 import numpy as np
 import random as rand
+import tensorflow as tf
+
+from copy import deepcopy
 
 from data_processing import sample_data
+from helpers import exec_sca
+from models import build_small_cnn_ascad
 from nn_genome import NeuralNetworkGenome
 
 
 class GeneticAlgorithm:
     def __init__(self, max_gens, pop_size, mut_power, mut_rate, crossover_rate,
-                 mut_power_decay_rate, truncation_proportion, atk_set_size):
+                 mut_power_decay_rate, truncation_proportion, atk_set_size,
+                 parallelise=False):
         self.max_gens = max_gens
         self.pop_size = pop_size
         self.mut_power = mut_power
@@ -16,13 +23,23 @@ class GeneticAlgorithm:
         self.mut_power_decay_rate = mut_power_decay_rate
         self.truncation_proportion = truncation_proportion
         self.atk_set_size = atk_set_size
+        self.parallelise = parallelise
 
         # Maintain the population and all offspring in self.population
         # The offspring occupy the second half of the array
         self.population = np.empty(pop_size*2, dtype=object)
+        self.fitnesses = np.full(pop_size*2, 255, dtype=np.uint8)
 
         # Store useful information
-        self.best_fitness_per_gen = np.empty(max_gens, dtype=np.int16)
+        self.best_fitness_per_gen = np.empty(max_gens, dtype=np.uint8)
+
+        # Parallelisation variables
+        if self.parallelise:
+            self.pool = mp.Pool(self.pop_size*2)
+    
+    def __del__(self):
+        if self.parallelise:
+            self.pool.close()
 
     def run(self, nn, x_atk_full, y_atk_full, ptexts, true_subkey, subkey_i=2):
         """
@@ -42,12 +59,11 @@ class GeneticAlgorithm:
             (x_atk, y_atk) = \
                 sample_data(self.atk_set_size, x_atk_full, y_atk_full)
 
-            # Fitness evaluation and updating of best individual
+            # Evaluate the fitness of each individual and update the best one
             print("Evaluating fitness values...")
             self.evaluate_fitness(x_atk, y_atk, ptexts, true_subkey, subkey_i)
-            fitnesses = np.vectorize(lambda x: x.fitness)(self.population)
-            best_idx = fitnesses.argmin()
-            best_fitness = fitnesses[best_idx]
+            best_idx = np.argmin(self.fitnesses)
+            best_fitness = self.fitnesses[best_idx]
             best_individual = self.population[best_idx]
 
             print("Selecting individuals...")
@@ -77,9 +93,22 @@ class GeneticAlgorithm:
         Computes and sets the current fitness value of each individual in the
         population and list of offspring.
         """
-        # TODO: Paralellise
-        for indiv in self.population:
-            indiv.evaluate_fitness(x_atk, y_atk, ptexts, true_subkey)
+        if self.parallelise:
+            # Set up a tuple of arguments for each concurrent process
+            argss = [
+                (self.population[i].model, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
+                for i in range(len(self.population))
+            ]
+            # Run fitness evaluations in parallel
+            self.fitnesses = self.pool.starmap(exec_sca, argss)
+
+            # Update the individuals' fitness values
+            for i in range(len(self.population)):
+                self.population[i].fitness = self.fitnesses[i]
+        else:
+            # Run fitness evaluations sequentially
+            for (i, indiv) in enumerate(self.population):
+                self.fitnesses[i] = indiv.evaluate_fitness(x_atk, y_atk, ptexts, true_subkey)
 
     def roulette_wheel_selection(self):
         """
@@ -95,7 +124,7 @@ class GeneticAlgorithm:
         # Invert fitnesses because fitness is minimised and min. fitness = 255
         inverted_fitnesses = np.fromiter(
             (255 - indiv.fitness for indiv in self.population),
-            dtype=np.int16
+            dtype=np.uint8
         )
 
         # Compute their sum so we can compute selection probabilities
