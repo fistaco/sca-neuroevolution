@@ -2,14 +2,14 @@ from tensorflow import keras
 
 from data_processing import load_ascad_data, train_test_split
 from experiments import ga_grid_search, run_ga, small_cnn_sgd_sca
-from models import build_small_cnn
+from models import build_small_cnn_ascad
 from params import MUTATION_POWER, MUTATION_RATE, CROSSOVER_RATE, \
     MAX_GENERATIONS, POPULATION_SIZE, TRUNCATION_PROPORTION, TOURNAMENT_SIZE, \
     MUTATION_POWER_DECAY, FITNESS_INHERITANCE_DECAY, ATTACK_SET_SIZE
 
 
 if __name__ == "__main__":
-    # small_cnn_sgd_sca()
+    # small_cnn_sgd_sca(subkey_idx=2)
 
     (x, y, x_atk, y_atk, train_meta, atk_meta) = \
         load_ascad_data(load_metadata=True)
@@ -31,8 +31,8 @@ if __name__ == "__main__":
     x_atk = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
 
     # Train the CNN by running it through the GA
-    cnn = build_small_cnn(original_input_shape)
-    run_ga(10, 4, MUTATION_POWER, MUTATION_RATE,
+    cnn = build_small_cnn_ascad()
+    run_ga(5, 2, MUTATION_POWER, MUTATION_RATE,
            CROSSOVER_RATE, MUTATION_POWER_DECAY, TRUNCATION_PROPORTION,
            ATTACK_SET_SIZE, cnn, x_train, y_train, train_ptexts, x_atk, y_atk,
            atk_ptexts, target_atk_subkey)

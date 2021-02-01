@@ -1,11 +1,12 @@
 import pandas as pd
 import tensorflow as tf
 from tensorflow import keras
+from time import time
 
 from data_processing import load_ascad_data
 from genetic_algorithm import GeneticAlgorithm
 from helpers import exec_sca
-from models import build_small_cnn
+from models import build_small_cnn_ascad
 from plotting import plot_gens_vs_fitness
 
 
@@ -25,12 +26,17 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
         crossover_rate,
         mut_power_decay_rate,
         truncation_proportion,
-        atk_set_size
+        atk_set_size,
+        parallelise=True
     )
 
     # Obtain the best network resulting from the GA
+    start = time()
     best_indiv = \
         ga.run(nn, x_validation, y_validation, ptexts_validation, true_subkey)
+    end = time()
+    t = int(end-start)
+    print(f"Time elapsed: {t}")
     best_nn = best_indiv.model
 
     # Evaluate the best network's performance on the test set
@@ -69,7 +75,7 @@ def small_cnn_sgd_sca(save=True, subkey_idx=2):
     x_atk_reshaped = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
 
     # Train CNN
-    cnn = build_small_cnn(original_input_shape)
+    cnn = build_small_cnn_ascad()
     cnn.compile(optimizer, loss_fn)
     history = cnn.fit(x_train, y_train_converted, batch_size, n_epochs)
 

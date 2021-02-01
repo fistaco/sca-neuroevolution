@@ -2,7 +2,7 @@ import tensorflow as tf
 from tensorflow import keras
 
 
-def build_small_cnn(data_input_shape):
+def build_small_cnn_ascad():
     """
     Constructs and returns the small convolutional NN proposed by Zaid et al.
     to attack the ASCAD data set.
@@ -16,7 +16,7 @@ def build_small_cnn(data_input_shape):
     # The resulting network has 30944 trainable weights
     cnn = keras.Sequential(
         [
-            keras.layers.Conv1D(4, 1, activation=tf.nn.selu, padding='same', input_shape=data_input_shape, kernel_initializer=keras.initializers.he_uniform()),
+            keras.layers.Conv1D(4, 1, activation=tf.nn.selu, padding='same', input_shape=(700,1), kernel_initializer=keras.initializers.he_uniform()),
             keras.layers.AveragePooling1D(pool_size=2, strides=2),
             keras.layers.Flatten(),
             keras.layers.Dense(10, activation=tf.nn.selu, kernel_initializer=keras.initializers.he_uniform()),
