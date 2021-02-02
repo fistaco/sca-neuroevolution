@@ -6,11 +6,6 @@ def build_small_cnn_ascad():
     """
     Constructs and returns the small convolutional NN proposed by Zaid et al.
     to attack the ASCAD data set.
-
-    Arguments:
-        data_input_shape: A tuple assumed to represent the shape of a single
-        input sample from the data before it was converted for CNN
-        compatibility.
     """
     # Use 4 CONV filters of size 1, SeLU, and 2 FC layers of 10 neurons each
     # The resulting network has 30944 trainable weights
@@ -26,3 +21,11 @@ def build_small_cnn_ascad():
     )
 
     return cnn
+
+
+def load_small_cnn_ascad():
+    """
+    Loads the trained version of the small convolutional NN proposed by Zaid et
+    al. directly from an HDF5 file and returns it.
+    """
+    return keras.models.load_model('./trained_models/efficient_cnn_ascad_model_17kw.h5')

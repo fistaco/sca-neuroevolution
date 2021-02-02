@@ -1,3 +1,7 @@
+import os
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
+os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
+
 from tensorflow import keras
 
 from data_processing import load_ascad_data, train_test_split
@@ -35,4 +39,4 @@ if __name__ == "__main__":
     run_ga(5, 2, MUTATION_POWER, MUTATION_RATE,
            CROSSOVER_RATE, MUTATION_POWER_DECAY, TRUNCATION_PROPORTION,
            ATTACK_SET_SIZE, cnn, x_train, y_train, train_ptexts, x_atk, y_atk,
-           atk_ptexts, target_atk_subkey)
+           atk_ptexts, target_atk_subkey, parallelise=True)

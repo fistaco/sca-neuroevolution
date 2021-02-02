@@ -6,10 +6,10 @@ from helpers import exec_sca
 
 
 class NeuralNetworkGenome:
-    def __init__(self, model):
-        self.model = model
-        self.weights = model.get_weights()  # List of numpy arrays
-        self.fitness = -1  # TODO: evaluate fitness upon creation?
+    def __init__(self, init_weights):
+        # self.model = model
+        self.weights = init_weights  # List of numpy arrays
+        self.fitness = -1
         # TODO: multiple ways of initialising weights?
 
     def mutate(self, mut_power, mut_rate, apply_fitness_inheritance=False,
@@ -27,8 +27,8 @@ class NeuralNetworkGenome:
                     mut_val = np.random.uniform() * 2 * mut_power - mut_power
                     child.weights[i][..., j] += mut_val
 
-        # Manually reconfigure model weights
-        self.model.set_weights(self.weights)
+        # # Manually reconfigure model weights
+        # self.model.set_weights(self.weights)
 
         return child
 
@@ -47,8 +47,8 @@ class NeuralNetworkGenome:
                 if np.random.uniform() < 0.5:
                     child.weights[i][..., j] = other_w
 
-        # Manually reconfigure model weights
-        self.model.set_weights(self.weights)
+        # # Manually reconfigure model weights
+        # self.model.set_weights(self.weights)
 
         return child
 
@@ -73,16 +73,18 @@ class NeuralNetworkGenome:
         # Use the model to perform an SCA and obtain the key rank
         key_rank = exec_sca(self.model, x_atk, y_atk, ptexts, true_subkey)
 
-        self.fitness = key_rank
+        self.fitness = key_rank  # Doesnt't work if multiprocessing is used
         return key_rank
 
     def clone(self):
         """
         Returns a deep copy of this genome.
         """
-        clone = NeuralNetworkGenome(keras.models.clone_model(self.model))
-        clone.weights = deepcopy(self.weights)
-        clone.model.set_weights(clone.weights)
+        # clone = NeuralNetworkGenome(keras.models.clone_model(self.model))
+        # clone.weights = deepcopy(self.weights)
+        # clone.model.set_weights(clone.weights)
+        # clone.fitness = self.fitness
+        clone = NeuralNetworkGenome(deepcopy(self.weights))
         clone.fitness = self.fitness
 
         return clone

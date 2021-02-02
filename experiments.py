@@ -17,7 +17,7 @@ def ga_grid_search():
 def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
            mut_power_decay_rate, truncation_proportion, atk_set_size, nn,
            x_validation, y_validation, ptexts_validation, x_test, y_test,
-           ptexts_test, true_subkey):
+           ptexts_test, true_subkey, parallelise):
     ga = GeneticAlgorithm(
         max_gens,
         pop_size,
@@ -27,7 +27,7 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
         mut_power_decay_rate,
         truncation_proportion,
         atk_set_size,
-        parallelise=True
+        parallelise
     )
 
     # Obtain the best network resulting from the GA
@@ -37,14 +37,15 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
     end = time()
     t = int(end-start)
     print(f"Time elapsed: {t}")
-    best_nn = best_indiv.model
+    # TODO: Create new model from best individual's weights here and test it
+    # best_nn = best_indiv.model
 
-    # Evaluate the best network's performance on the test set
-    key_rank = exec_sca(best_nn, x_test, y_test, ptexts_test, true_subkey)
-    # TODO: plot generational fitness improvement
+    # # Evaluate the best network's performance on the test set
+    # key_rank = exec_sca(best_nn, x_test, y_test, ptexts_test, true_subkey)
+    # # TODO: plot generational fitness improvement
 
     print(f"Key rank on validation set: {best_indiv.fitness}")
-    print(f"Key rank on test set: {key_rank}")
+    # print(f"Key rank on test set: {key_rank}")
 
 
 def small_cnn_sgd_sca(save=True, subkey_idx=2):

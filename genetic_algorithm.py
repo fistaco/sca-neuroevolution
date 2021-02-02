@@ -1,4 +1,4 @@
-import multiprocessing.dummy as mp
+import multiprocessing as mp
 import numpy as np
 import random as rand
 import tensorflow as tf
@@ -7,7 +7,7 @@ from copy import deepcopy
 
 from data_processing import sample_data
 from helpers import exec_sca
-from models import build_small_cnn_ascad
+from models import build_small_cnn_ascad, load_small_cnn_ascad
 from nn_genome import NeuralNetworkGenome
 
 
@@ -84,8 +84,9 @@ class GeneticAlgorithm:
         """
         Initialises a population of NNs with the given architecture parameters.
         """
+        nn_weights = nn.get_weights()
         for i in range(len(self.population)):
-            self.population[i] = NeuralNetworkGenome(nn)
+            self.population[i] = NeuralNetworkGenome(nn_weights)
             # TODO: maybe initialise weights randomly?
 
     def evaluate_fitness(self, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
@@ -96,11 +97,12 @@ class GeneticAlgorithm:
         if self.parallelise:
             # Set up a tuple of arguments for each concurrent process
             argss = [
-                (self.population[i].model, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
+                (self.population[i].weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
                 for i in range(len(self.population))
             ]
             # Run fitness evaluations in parallel
-            self.fitnesses = self.pool.starmap(exec_sca, argss)
+            # self.fitnesses = self.pool.starmap(exec_sca, argss)
+            self.fitnesses = self.pool.starmap(f, argss)
 
             # Update the individuals' fitness values
             for i in range(len(self.population)):
@@ -108,7 +110,8 @@ class GeneticAlgorithm:
         else:
             # Run fitness evaluations sequentially
             for (i, indiv) in enumerate(self.population):
-                self.fitnesses[i] = indiv.evaluate_fitness(x_atk, y_atk, ptexts, true_subkey)
+                self.fitnesses[i] = \
+                    f(indiv.weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
 
     def roulette_wheel_selection(self):
         """
@@ -182,3 +185,9 @@ class GeneticAlgorithm:
                 offspring[i] = parent0.mutate(self.mut_power, self.mut_rate)
         
         return offspring
+
+
+def f(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
+    cnn = load_small_cnn_ascad()
+    cnn.set_weights(weights)
+    return exec_sca(cnn, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
