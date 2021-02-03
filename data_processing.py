@@ -34,7 +34,7 @@ def load_ascad_data(data_filepath="./../ASCAD_data/ASCAD_databases/ASCAD.h5",
     return data_tup
 
 
-def load_ascad_atk_variables(subkey_idx=2, for_cnns=True, scale=False):
+def load_ascad_atk_variables(subkey_idx=2, for_cnns=True, scale=True):
     """
     Loads the ASCAD data set and returns all variables required to perform an
     SCA with a neural network. If the attack will be carried out by a CNN,
