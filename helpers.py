@@ -10,7 +10,7 @@ def exec_sca(ann_model, x_atk, y_atk, ptexts, true_subkey, subkey_idx=2):
     network and returns the key rank obtained with the attack.
     """
     # Obtain y_pred_probs for each trace and aggregate them for the key guess
-    y_pred_probs = ann_model.predict(x_atk)
+    y_pred_probs = ann_model.predict_proba(x_atk)
     subkey_logprobs = subkey_pred_logprobs(y_pred_probs, ptexts, subkey_idx)
 
     return keyrank(subkey_logprobs, true_subkey)
