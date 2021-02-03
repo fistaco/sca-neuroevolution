@@ -12,6 +12,7 @@ def build_small_cnn_ascad():
     cnn = keras.Sequential(
         [
             keras.layers.Conv1D(4, 1, activation=tf.nn.selu, padding='same', input_shape=(700,1), kernel_initializer=keras.initializers.he_uniform()),
+            keras.layers.BatchNormalization(),
             keras.layers.AveragePooling1D(pool_size=2, strides=2),
             keras.layers.Flatten(),
             keras.layers.Dense(10, activation=tf.nn.selu, kernel_initializer=keras.initializers.he_uniform()),
