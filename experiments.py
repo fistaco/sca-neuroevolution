@@ -3,10 +3,11 @@ import tensorflow as tf
 from tensorflow import keras
 from time import time
 
-from data_processing import load_ascad_data
+from data_processing import load_ascad_data, load_ascad_atk_variables, \
+    scale_inputs
 from genetic_algorithm import GeneticAlgorithm
 from helpers import exec_sca
-from models import build_small_cnn_ascad
+from models import build_small_cnn_ascad, load_small_cnn_ascad
 from plotting import plot_gens_vs_fitness
 
 
@@ -71,6 +72,10 @@ def small_cnn_sgd_sca(save=True, subkey_idx=2):
     # Convert labels to one-hot encoding probabilities
     y_train_converted = keras.utils.to_categorical(y_train, num_classes=256)
 
+    # Scale the inputs
+    x_train = scale_inputs(x_train)
+    x_atk = scale_inputs(x_atk)
+
     # Reshape the trace input to come in singleton arrays for CNN compatibility
     x_train = x_train.reshape((x_train.shape[0], x_train.shape[1], 1))
     x_atk_reshaped = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
@@ -85,6 +90,20 @@ def small_cnn_sgd_sca(save=True, subkey_idx=2):
         cnn.save('./trained_models/efficient_cnn_ascad_model_17kw.h5')
 
     # Attack with the trained model
-    key_rank = exec_sca(cnn, x_atk_reshaped, y_atk, atk_ptexts, target_subkey, subkey_idx=1)
+    key_rank = exec_sca(cnn, x_atk_reshaped, y_atk, atk_ptexts, target_subkey, subkey_idx=2)
 
     print(f"Key rank obtained with efficient CNN on ASCAD: {key_rank}")
+
+
+def attack_ascad_with_cnn(subkey_idx=2):
+    # Load attack set of 10k ASCAD traces and relevant metadata
+    (x_atk, y_atk, target_subkey, atk_ptexts) = \
+        load_ascad_atk_variables(for_cnns=True, subkey_idx=2, scale=True)
+
+    # Load CNN and attack the traces with it
+    cnn = load_small_cnn_ascad()
+    # cnn = keras.models.load_model("./trained_models/efficient_cnn_ascad_model_from_github.h5")
+    key_rank = exec_sca(cnn, x_atk, y_atk, atk_ptexts, target_subkey, subkey_idx)
+
+    print(f"Key rank = {key_rank}")
+    
