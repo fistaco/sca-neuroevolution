@@ -1,6 +1,8 @@
 import h5py
 import numpy as np
 
+from sklearn import preprocessing
+
 
 def load_ascad_data(data_filepath="./../ASCAD_data/ASCAD_databases/ASCAD.h5",
                     load_metadata=False):
@@ -32,6 +34,35 @@ def load_ascad_data(data_filepath="./../ASCAD_data/ASCAD_databases/ASCAD.h5",
     return data_tup
 
 
+def load_ascad_atk_variables(subkey_idx=2, for_cnns=True, scale=False):
+    """
+    Loads the ASCAD data set and returns all variables required to perform an
+    SCA with a neural network. If the attack will be carried out by a CNN,
+    the attack set is reshaped first.
+
+    Returns:
+        A tuple containing attack traces, attack labels, the true target key at
+        the given subkey index, and the attack plaintexts.
+    """
+    (x, y, x_atk, y_atk, train_meta, atk_meta) = \
+        load_ascad_data(load_metadata=True)
+    original_input_shape = (700, 1)
+
+    # Declare easily accessible variables for relevant metadata
+    target_atk_subkey = atk_meta['key'][0][subkey_idx]
+    atk_ptexts = atk_meta['plaintext']
+
+    # Scale the inputs to range [0, 1] if desired
+    if scale:
+        x_atk = scale_inputs(x_atk)
+
+    # Reshape trace inputs for CNN compatibility if necessary
+    if for_cnns:
+        x_atk = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
+
+    return (x_atk, y_atk, target_atk_subkey, atk_ptexts)
+
+
 def reshape_input_for_cnns(input_data):
     """
     Converts and returns the given 2D input data so that it consists of
@@ -56,3 +87,13 @@ def train_test_split(x, y, train_proportion):
     """
     cutoff = int(len(x)*train_proportion)
     return (x[:cutoff], x[cutoff:], y[:cutoff], y[cutoff:])
+
+
+def scale_inputs(inputs):
+    """
+    Scales the given inputs uniformly to put them in range [0, 1].
+
+    Arguments:
+        xs: A 2-dimensional array of trace inputs.
+    """
+    return preprocessing.MinMaxScaler((0, 1)).fit_transform(inputs)
