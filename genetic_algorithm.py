@@ -102,7 +102,7 @@ class GeneticAlgorithm:
             ]
             # Run fitness evaluations in parallel
             # self.fitnesses = self.pool.starmap(exec_sca, argss)
-            self.fitnesses = self.pool.starmap(f, argss)
+            self.fitnesses = self.pool.starmap(evaluate_fitness, argss)
 
             # Update the individuals' fitness values
             for i in range(len(self.population)):
@@ -111,7 +111,7 @@ class GeneticAlgorithm:
             # Run fitness evaluations sequentially
             for (i, indiv) in enumerate(self.population):
                 self.fitnesses[i] = \
-                    f(indiv.weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
+                    evaluate_fitness(indiv.weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
 
     def roulette_wheel_selection(self):
         """
@@ -187,7 +187,14 @@ class GeneticAlgorithm:
         return offspring
 
 
-def f(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
+def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
+    """
+    Evaluates the fitness of an individual by using its weights to construct a
+    new CNN, which is used to execute an SCA on the given data.
+
+    Returns:
+        The key rank obtained with the SCA.
+    """
     cnn = load_small_cnn_ascad()
     cnn.set_weights(weights)
     return exec_sca(cnn, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
