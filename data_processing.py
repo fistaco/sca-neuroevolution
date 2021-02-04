@@ -71,13 +71,32 @@ def reshape_input_for_cnns(input_data):
     return input_data.reshape((input_data.shape[0], input_data.shape[1], 1))
 
 
-def sample_data(n_samples, set_x, set_y):
+def sample_data(n_samples, *data_sets):
     """
-    Extracts and returns n random samples from the 2 given data sets. 
+    Extracts and returns n random samples from the given data sets. The same
+    random indices are used to extract samples from each set.
     """
-    indices = np.random.choice(len(set_x), n_samples)
+    indices = np.random.choice(len(data_sets[0]), n_samples)
 
-    return (set_x[indices], set_y[indices])
+    tup = ()
+    for data_set in data_sets:
+        tup += (data_set[indices], )
+
+    return tup
+
+
+def shuffle_data(*data_sets):
+    """
+    Shuffles each given data set according the same randomly generated indices
+    and returns a tuple containing the shuffled data sets.
+    """
+    perm = np.random.permutation(len(data_sets[0]))
+
+    tup = ()
+    for data_set in data_sets:
+        tup += (data_set[perm], )
+    
+    return tup
 
 
 def train_test_split(x, y, train_proportion):
