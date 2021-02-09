@@ -1,5 +1,6 @@
 import multiprocessing as mp
 import numpy as np
+import pickle
 import random as rand
 import tensorflow as tf
 
@@ -34,8 +35,15 @@ class GeneticAlgorithm:
         self.best_fitness_per_gen = np.empty(max_gens, dtype=np.uint8)
 
         # Parallelisation variables
+        pool_size = round(min(self.pop_size*2, mp.cpu_count()*0.25))
         if self.parallelise:
             self.pool = mp.Pool(self.pop_size*2)
+        
+        # Use a dictionary to enable simple selection method parametrisation
+        selection_methods = {
+            "roulette_wheel": self.roulette_wheel_selection,
+            "tournament": self.tournament_selection
+        }
     
     def __del__(self):
         if self.parallelise:
@@ -88,6 +96,7 @@ class GeneticAlgorithm:
         for i in range(len(self.population)):
             self.population[i] = NeuralNetworkGenome(nn_weights)
             # TODO: maybe initialise weights randomly?
+            # TODO: parallelise?
 
     def evaluate_fitness(self, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
         """
@@ -185,6 +194,15 @@ class GeneticAlgorithm:
                 offspring[i] = parent0.mutate(self.mut_power, self.mut_rate)
         
         return offspring
+    
+    def save_results(self, best_indiv, experiment_name):
+        """
+        Saves the results, i.e. the best individual and the best fitnesses per
+        generation, to a pickle file for later use.
+        """
+        with open(f"{experiment_name}_ga_results", "wb") as f:
+            ga_results = (best_indiv, self.best_fitness_per_gen)
+            pickle.dump(ga_results, f)
 
 
 def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
