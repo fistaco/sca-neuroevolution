@@ -17,7 +17,7 @@ def plot_gens_vs_fitness(fitnesses_per_gen, experiment_name):
     plx.ylabel("Fitness (key rank)")
     plt.plot(np.arange(len(fitnesses_per_gen)), fitnesses_per_gen)
     plt.grid(True)
-    plt.savefig(experiment_name)
+    plt.savefig(f"./fig/{experiment_name}_gens_vs_fitness.png")
     plt.clf()
 
 
@@ -34,8 +34,8 @@ def plot_n_traces_vs_key_rank(rank_per_trace_num, experiment_name):
     """
     plt.title(f"Amount of traces ~ key rank ({experiment_name})")
     plt.xlabel("Traces")
-    plx.ylabel("Key rank")
+    plt.ylabel("Key rank")
     plt.plot(rank_per_trace_num.keys(), rank_per_trace_num.values())
     plt.grid(True)
-    plt.savefig(experiment_name)
+    plt.savefig(f"./fig/{experiment_name}_traces_vs_keyrank.png")
     plt.clf()
