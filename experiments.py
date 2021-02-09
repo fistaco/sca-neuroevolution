@@ -231,7 +231,7 @@ def tenfold_ascad_atk_with_varying_size(nn, subkey_idx=2, experiment_name="",
     for (i, atk_set_size) in enumerate(atk_set_sizes):
         mean_rank = np.mean([fold_key_ranks[fold][i] for fold in range(10)])
         mean_key_ranks[atk_set_size] = int(mean_rank)
-    with open(f"{experiment_name}_test_set_mean_key_ranks", "wb") as f:
+    with open(f"{experiment_name}_test_set_mean_key_ranks.pickle", "wb") as f:
         pickle.dump(mean_key_ranks, f)
     
     for (n_traces, rank) in mean_key_ranks.items():

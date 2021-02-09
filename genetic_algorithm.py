@@ -200,7 +200,7 @@ class GeneticAlgorithm:
         Saves the results, i.e. the best individual and the best fitnesses per
         generation, to a pickle file for later use.
         """
-        with open(f"{experiment_name}_ga_results", "wb") as f:
+        with open(f"{experiment_name}_ga_results.pickle", "wb") as f:
             ga_results = (best_indiv, self.best_fitness_per_gen)
             pickle.dump(ga_results, f)
 
