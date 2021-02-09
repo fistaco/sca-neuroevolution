@@ -8,7 +8,7 @@ from helpers import exec_sca
 class NeuralNetworkGenome:
     def __init__(self, init_weights):
         # self.model = model
-        self.weights = init_weights  # List of numpy arrays
+        self.weights = deepcopy(init_weights)  # List of numpy arrays
         self.fitness = -1
         # TODO: multiple ways of initialising weights?
 
