@@ -24,9 +24,16 @@ def build_small_cnn_ascad():
     return cnn
 
 
-def load_small_cnn_ascad():
+def load_small_cnn_ascad(official=False):
     """
     Loads the trained version of the small convolutional NN proposed by Zaid et
     al. directly from an HDF5 file and returns it.
+
+    Arguments:
+        official: If True, use the official network taken from the paper's
+            corresponding GitHub page.
     """
-    return keras.models.load_model('./trained_models/efficient_cnn_ascad_model_17kw.h5')
+    path = "./trained_models/efficient_cnn_ascad_model_from_github.h5" \
+           if official \
+           else "./trained_models/efficient_cnn_ascad_model_17kw.h5"
+    return keras.models.load_model(path)
