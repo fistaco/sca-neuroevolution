@@ -55,3 +55,26 @@ def subkey_pred_logprobs(label_pred_probs, ptexts, subkey_idx=2, masks=None):
             subkey_logprobs[subkey] += logprob
     
     return subkey_logprobs
+
+
+def compute_mem_req(pop_size, nn, atk_set_size):
+    """
+    Approximates the amount of memory that running a GA instance will
+    require based on the population size and the amount of network weights.
+
+    The computation assumes that:
+        - Each weight requires 4 bytes;
+        - Fitness evaluation spawns a new process for each individual,
+        copying its weights to construct a model of roughly equal size.
+        This results in (n_weights * 3) weights per individual;
+        - Fitness evaluation copies the required items from the attack set;
+        - Each item in the attack set is an array of 700 64-bit floats.
+    """
+    max_indivs = pop_size*2
+    ws = nn.get_weights()
+    n_ws = np.sum([layer_ws.size for layer_ws in ws])
+
+    ws_bytes = 4*n_ws
+    atk_set_bytes = atk_set_size*700  # Times 8 if scaling traces to 64b floats
+
+    return max_indivs*(ws_bytes*3 + atk_set_bytes)
