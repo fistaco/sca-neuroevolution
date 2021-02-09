@@ -84,7 +84,7 @@ class NeuralNetworkGenome:
         # clone.weights = deepcopy(self.weights)
         # clone.model.set_weights(clone.weights)
         # clone.fitness = self.fitness
-        clone = NeuralNetworkGenome(deepcopy(self.weights))
+        clone = NeuralNetworkGenome(self.weights)
         clone.fitness = self.fitness
 
         return clone
