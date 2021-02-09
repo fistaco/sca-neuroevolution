@@ -239,3 +239,16 @@ def tenfold_ascad_atk_with_varying_size(nn, subkey_idx=2, experiment_name="",
 
     if experiment_name:
         plot_n_traces_vs_key_rank(mean_key_ranks, experiment_name)
+
+
+def compute_memory_requirements(pop_sizes, atk_set_sizes):
+    """
+    Approximates the required memory (GB) to run the GA for a given list of
+    population sizes and attack set sizes.
+    """
+    cnn = load_small_cnn_ascad()
+
+    for pop_size in pop_sizes:
+        for atk_set_size in atk_set_sizes:
+            mem = compute_mem_req(pop_size, cnn, atk_set_size)/1e6
+            print(f"Required memory for pop size {pop_size} & attack set size {atk_set_size}: {mem} GB")
