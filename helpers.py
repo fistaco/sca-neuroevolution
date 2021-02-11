@@ -59,8 +59,8 @@ def subkey_pred_logprobs(label_pred_probs, ptexts, subkey_idx=2, masks=None):
 
 def compute_mem_req(pop_size, nn, atk_set_size):
     """
-    Approximates the amount of memory that running a GA instance will
-    require based on the population size and the amount of network weights.
+    Approximates the amount of memory that running a GA instance will require
+    based on the population size and the amount of network weights.
 
     The computation assumes that:
         - Each weight requires 4 bytes;
@@ -78,3 +78,19 @@ def compute_mem_req(pop_size, nn, atk_set_size):
     atk_set_bytes = atk_set_size*700  # Times 8 if scaling traces to 64b floats
 
     return max_indivs*(ws_bytes*3 + atk_set_bytes)
+
+
+def compute_mem_req_from_known_vals(pop_size, data_set_size):
+    """
+    Approximates the amount of memory that running a GA instance will require
+    based on the population size and the amount of network weights. This is
+    done by using 0.4GB and 0.000003 as constants for the required size per
+    individual and per data set size unit respectively.
+
+    The estimated 0.4GB per individual includes the amount of memory used to
+    spawn a new process.
+
+    Returns:
+        The approximate RAM requirement in GB.
+    """
+    return 2*pop_size*(0.4 + data_set_size*0.000003)
