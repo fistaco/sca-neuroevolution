@@ -95,6 +95,7 @@ class GeneticAlgorithm:
         nn_weights = nn.get_weights()
         for i in range(len(self.population)):
             self.population[i] = NeuralNetworkGenome(nn_weights)
+            self.population[i].random_weight_init()
             # TODO: maybe initialise weights randomly?
             # TODO: parallelise?
 
