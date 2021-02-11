@@ -12,6 +12,14 @@ class NeuralNetworkGenome:
         self.fitness = -1
         # TODO: multiple ways of initialising weights?
 
+    def random_weight_init(self):
+        """
+        Sets each weight to a random value in the range [0, 1).
+        """
+        for i in range(len(self.weights)):  # Iterate over layers
+            for j in range(self.weights[i].shape[-1]):  # Iterate over weights
+                child.weights[i][..., j] = np.float32(np.random.uniform())
+
     def mutate(self, mut_power, mut_rate, apply_fitness_inheritance=False,
                fi_decay=0.2):
         """
