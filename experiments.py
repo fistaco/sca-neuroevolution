@@ -7,7 +7,8 @@ from time import time
 from data_processing import load_ascad_data, load_ascad_atk_variables, \
     sample_data, shuffle_data, scale_inputs
 from genetic_algorithm import GeneticAlgorithm
-from helpers import exec_sca, label_to_subkey, compute_mem_req
+from helpers import exec_sca, label_to_subkey, compute_mem_req, \
+    compute_mem_req_from_known_vals
 from metrics import keyrank
 from models import build_small_cnn_ascad, load_small_cnn_ascad
 from plotting import plot_gens_vs_fitness, plot_n_traces_vs_key_rank
@@ -20,6 +21,7 @@ def ga_grid_search():
     atk_set_sizes = np.array([2, 16, 128, 1024])  # 4 values
     selection_methods = np.array(["roulette_wheel", "tournament"])  # 2 values
     # TODO: test different weight init versions
+    # TODO: Only test small atk set sizes with fitness inheritance enabled
 
     # Mutation power decay rate is assumed to be near optimal
     # Total runs without selection method variation = 320
@@ -103,7 +105,7 @@ def single_ga_experiment():
     cnn = load_small_cnn_ascad()
     run_ga(
         max_gens=5,
-        pop_size=2,
+        pop_size=8,
         mut_power=0.03,
         mut_rate=0.04,
         crossover_rate=0.5,
@@ -172,14 +174,12 @@ def small_cnn_sgd_sca(save=True, subkey_idx=2):
 def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000):
     # Load attack set of 10k ASCAD traces and relevant metadata
     (x_atk, y_atk, target_subkey, atk_ptexts) = \
-        load_ascad_atk_variables(for_cnns=True, subkey_idx=2, scale=True)
+        load_ascad_atk_variables(for_cnns=True, subkey_idx=2, scale=False)
     x_atk, y_atk = x_atk[:atk_set_size], y_atk[:atk_set_size]
 
     # Load CNN and attack the traces with it
-    # cnn = load_small_cnn_ascad()
-    cnn = keras.models.load_model("./trained_models/efficient_cnn_ascad_model_from_github.h5")
-    # key_rank = exec_sca(cnn, x_atk, y_atk, atk_ptexts, target_subkey, subkey_idx)
-    # print(f"Key rank = {key_rank}")
+    cnn = load_small_cnn_ascad(official=False)
+    # cnn = keras.models.load_model("./trained_models/efficient_cnn_ascad_model_from_github.h5")
 
     tenfold_ascad_atk_with_varying_size(cnn)
     
@@ -248,7 +248,15 @@ def compute_memory_requirements(pop_sizes, atk_set_sizes):
     """
     cnn = load_small_cnn_ascad()
 
+    print("=== Reqs based on theory: ===")
     for pop_size in pop_sizes:
         for atk_set_size in atk_set_sizes:
             mem = compute_mem_req(pop_size, cnn, atk_set_size)/1e6
+            print(f"Required memory for pop size {pop_size} & attack set size {atk_set_size}: {mem} GB")
+
+    print("==========================================")
+    print("=== Reqs based on manual observations: ===")
+    for pop_size in pop_sizes:
+        for atk_set_size in atk_set_sizes:
+            mem = compute_mem_req_from_known_vals(pop_size, atk_set_size)
             print(f"Required memory for pop size {pop_size} & attack set size {atk_set_size}: {mem} GB")
