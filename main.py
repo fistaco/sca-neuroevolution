@@ -1,5 +1,5 @@
 import os
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"   # see issue #152
+os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 from tensorflow import keras
@@ -14,9 +14,9 @@ from params import MUTATION_POWER, MUTATION_RATE, CROSSOVER_RATE, \
 
 
 if __name__ == "__main__":
-    single_ga_experiment()
+    # single_ga_experiment()
     # small_cnn_sgd_sca(subkey_idx=2)
-    # attack_ascad_with_cnn(subkey_idx=2, atk_set_size=1500)
+    attack_ascad_with_cnn(subkey_idx=2, atk_set_size=1000, scale=True)
 
     # pop_sizes = list(range(25, 251, 75))
     # atk_set_sizes = [2, 16, 128, 1024]
