@@ -1,3 +1,5 @@
+import pickle
+
 import numpy as np
 
 from constants import INVERSE_SBOX, SBOX
@@ -80,7 +82,7 @@ def compute_mem_req(pop_size, nn, atk_set_size):
     return max_indivs*(ws_bytes*3 + atk_set_bytes)
 
 
-def compute_mem_req_from_known_vals(pop_size, data_set_size):
+def compute_mem_req_from_known_vals(pop_size, data_set_size, scaling=False):
     """
     Approximates the amount of memory that running a GA instance will require
     based on the population size and the amount of network weights. This is
@@ -93,4 +95,18 @@ def compute_mem_req_from_known_vals(pop_size, data_set_size):
     Returns:
         The approximate RAM requirement in GB.
     """
-    return 2*pop_size*(0.4 + data_set_size*0.000003)
+    return 2*pop_size*(0.4 + data_set_size*0.000003*(8 if scaling else 1))
+
+
+def load_model_weights_from_ga_results(experiment_name):
+    """
+    Loads and returns the weights of the best individual constructed during the
+    GA experiment with the given experiment name.
+    """
+    path = f"{experiment_name}_ga_results.pickle"
+    nn_weights = None
+    with open(path, "rb") as f:
+        ga_results = pickle.load(f)
+        nn_weights = ga_results[0]
+    
+    return nn_weights
