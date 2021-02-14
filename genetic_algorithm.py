@@ -8,14 +8,15 @@ from copy import deepcopy
 
 from data_processing import sample_data
 from helpers import exec_sca
-from models import build_small_cnn_ascad, load_small_cnn_ascad
+from models import build_small_cnn_ascad, load_small_cnn_ascad, \
+    load_small_cnn_ascad_no_batch_norm
 from nn_genome import NeuralNetworkGenome
 
 
 class GeneticAlgorithm:
     def __init__(self, max_gens, pop_size, mut_power, mut_rate, crossover_rate,
                  mut_power_decay_rate, truncation_proportion, atk_set_size,
-                 parallelise=False):
+                 parallelise=False, elitism=False):
         self.max_gens = max_gens
         self.pop_size = pop_size
         self.mut_power = mut_power
@@ -63,7 +64,6 @@ class GeneticAlgorithm:
 
         while gen < self.max_gens and best_fitness > 0:
             # Randomly sample the attack set
-            print("Sampling data....")
             (x_atk, y_atk) = \
                 sample_data(self.atk_set_size, x_atk_full, y_atk_full)
 
@@ -214,6 +214,6 @@ def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
     Returns:
         The key rank obtained with the SCA.
     """
-    cnn = load_small_cnn_ascad()
+    cnn = load_small_cnn_ascad_no_batch_norm()
     cnn.set_weights(weights)
     return exec_sca(cnn, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
