@@ -34,7 +34,7 @@ def load_ascad_data(data_filepath="./../ASCAD_data/ASCAD_databases/ASCAD.h5",
     return data_tup
 
 
-def load_ascad_atk_variables(subkey_idx=2, for_cnns=True, scale=True):
+def load_ascad_atk_variables(subkey_idx=2, for_cnns=True, scale=False):
     """
     Loads the ASCAD data set and returns all variables required to perform an
     SCA with a neural network. If the attack will be carried out by a CNN,
@@ -116,3 +116,14 @@ def scale_inputs(inputs):
         xs: A 2-dimensional array of trace inputs.
     """
     return preprocessing.MinMaxScaler((0, 1)).fit_transform(inputs)
+
+
+def to_uint8(data_set):
+    """
+    Converts the given data set's values to fit within the range
+    [0, 1, ..., 255], sets the datatype as uint8 and returns the result.
+
+    This method assumes the original data values are 8-bit integers ranging
+    from -128 to 127.
+    """
+    return (data_set + 128).astype(np.uint8)
