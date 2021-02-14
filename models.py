@@ -1,6 +1,8 @@
 import tensorflow as tf
 from tensorflow import keras
 
+from helpers import load_model_weights_from_ga_results
+
 
 def build_small_cnn_ascad():
     """
@@ -8,7 +10,7 @@ def build_small_cnn_ascad():
     to attack the ASCAD data set.
     """
     # Use 4 CONV filters of size 1, SeLU, and 2 FC layers of 10 neurons each
-    # The resulting network has 30944 trainable weights
+    # The resulting network has 16960 trainable weights
     cnn = keras.Sequential(
         [
             keras.layers.Conv1D(4, 1, activation=tf.nn.selu, padding='same', input_shape=(700,1), kernel_initializer=keras.initializers.he_uniform()),
@@ -37,3 +39,73 @@ def load_small_cnn_ascad(official=False):
            if official \
            else "./trained_models/efficient_cnn_ascad_model_17kw.h5"
     return keras.models.load_model(path)
+
+
+def build_small_cnn_ascad_no_batch_norm(save=False):
+    """
+    Constructs and returns the small convolutional NN proposed by Zaid et al.
+    to attack the ASCAD data set, but leaves out the batch normalisation layer,
+    making it less efficient is trained with SGD, but appropriate for a GA.
+    """
+    # Use 4 CONV filters of size 1, SeLU, and 2 FC layers of 10 neurons each
+    # The resulting network has 30944 trainable weights
+    cnn = keras.Sequential(
+        [
+            keras.layers.Conv1D(4, 1, activation=tf.nn.selu, padding='same', input_shape=(700,1), kernel_initializer=keras.initializers.he_uniform()),
+            keras.layers.AveragePooling1D(pool_size=2, strides=2),
+            keras.layers.Flatten(),
+            keras.layers.Dense(10, activation=tf.nn.selu, kernel_initializer=keras.initializers.he_uniform()),
+            keras.layers.Dense(10, activation=tf.nn.selu, kernel_initializer=keras.initializers.he_uniform()),
+            keras.layers.Dense(256, activation=tf.nn.softmax)
+        ]
+    )
+    
+    if save:
+        cnn.save("./trained_models/efficient_cnn_ascad_model_17kw_no_bn.h5")
+    
+    return cnn
+
+
+def load_small_cnn_ascad_no_batch_norm():
+    """
+    Loads an untrained, small convolutional NN with an architecture proposed by
+    Zaid et al. directly from an HDF5 file and returns it. This version of the
+    model leaves out the batch normalisation layer to make it apt for
+    optimisation through a GA.
+    """
+    path = "./trained_models/efficient_cnn_ascad_model_17kw_no_bn.h5"
+    return keras.models.load_model(path, compile=False)
+
+
+def build_small_cnn_rand_init():
+    """
+    Constructs and returns the small convolutional NN proposed by Zaid et al.
+    to attack the ASCAD data set.
+    """
+    # Use 4 CONV filters of size 1, SeLU, and 2 FC layers of 10 neurons each
+    # The resulting network has 30944 trainable weights
+    cnn = keras.Sequential(
+        [
+            keras.layers.Conv1D(4, 1, activation=tf.nn.selu, padding='same', input_shape=(700,1), kernel_initializer=keras.initializers.random_uniform(-1, 1), name="conv"),
+            keras.layers.BatchNormalization(name="batch_norm"),
+            keras.layers.AveragePooling1D(pool_size=2, strides=2, name="pool"),
+            keras.layers.Flatten(name="flatten"),
+            keras.layers.Dense(10, activation=tf.nn.selu, kernel_initializer=keras.initializers.random_uniform(-1, 1), name="dense0"),
+            keras.layers.Dense(10, activation=tf.nn.selu, kernel_initializer=keras.initializers.random_uniform(-1, 1), name="dense1"),
+            keras.layers.Dense(256, activation=tf.nn.softmax, name="output")
+        ]
+    )
+    
+    return cnn
+
+
+def load_nn_from_experiment_results(experiment_name, load_model_function):
+    """
+    Loads an NN with the given model loading function and assigns it the
+    weights corresponding to the given GA experiment name.
+    """
+    weights = load_model_weights_from_ga_results(experiment_name)
+    nn = load_model_function()
+    nn.set_weights(weights)
+
+    return nn
