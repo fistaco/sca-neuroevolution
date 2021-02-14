@@ -18,7 +18,7 @@ class NeuralNetworkGenome:
         """
         for i in range(len(self.weights)):  # Iterate over layers
             for j in range(self.weights[i].shape[-1]):  # Iterate over weights
-                child.weights[i][..., j] = np.float32(np.random.uniform())
+                self.weights[i][..., j] = np.float32(np.random.uniform(-1, 1))
 
     def mutate(self, mut_power, mut_rate, apply_fitness_inheritance=False,
                fi_decay=0.2):
