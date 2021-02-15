@@ -110,3 +110,10 @@ def load_model_weights_from_ga_results(experiment_name):
         nn_weights = ga_results[0]
     
     return nn_weights
+
+
+def gen_experiment_name(pop_size, atk_set_size):
+    """
+    Generates an experiment name for a GA run using the given parameters.
+    """
+    return f"ps{pop_size}-ass{atk_set_size}"
