@@ -8,7 +8,7 @@ from data_processing import load_ascad_data, load_ascad_atk_variables, \
     sample_data, shuffle_data, scale_inputs
 from genetic_algorithm import GeneticAlgorithm
 from helpers import exec_sca, label_to_subkey, compute_mem_req, \
-    compute_mem_req_from_known_vals
+    compute_mem_req_from_known_vals, gen_experiment_name
 from metrics import keyrank
 from models import build_small_cnn_ascad, load_small_cnn_ascad, \
     load_small_cnn_ascad_no_batch_norm, load_nn_from_experiment_results
@@ -115,8 +115,8 @@ def single_ga_experiment():
     # Train the CNN by running it through the GA
     cnn = load_small_cnn_ascad_no_batch_norm()
     run_ga(
-        max_gens=5,
-        pop_size=8,
+        max_gens=100,
+        pop_size=250,
         mut_power=0.03,
         mut_rate=0.04,
         crossover_rate=0.5,
@@ -132,7 +132,8 @@ def single_ga_experiment():
         ptexts_test=atk_ptexts,
         true_validation_subkey=target_train_subkey,
         true_atk_subkey=target_atk_subkey,
-        parallelise=True
+        parallelise=True,
+        experiment_name=gen_experiment_name(250, 1024)
     )
 
 
