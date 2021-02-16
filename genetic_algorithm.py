@@ -1,15 +1,16 @@
 import multiprocessing as mp
-import numpy as np
+import os
 import pickle
 import random as rand
-import tensorflow as tf
-
 from copy import deepcopy
+
+import numpy as np
+import tensorflow as tf
 
 from data_processing import sample_data
 from helpers import exec_sca
-from models import build_small_cnn_ascad, load_small_cnn_ascad, \
-    load_small_cnn_ascad_no_batch_norm
+from models import (build_small_cnn_ascad, load_small_cnn_ascad,
+                    load_small_cnn_ascad_no_batch_norm)
 from nn_genome import NeuralNetworkGenome
 
 
@@ -36,7 +37,8 @@ class GeneticAlgorithm:
         self.best_fitness_per_gen = np.empty(max_gens, dtype=np.uint8)
 
         # Parallelisation variables
-        pool_size = round(min(self.pop_size*2, mp.cpu_count()*0.25))
+        # pool_size = round(min(self.pop_size*2, mp.cpu_count()*0.5)
+        pool_size = min(self.pop_size*2, len(os.sched_getaffinity(0)))
         if self.parallelise:
             self.pool = mp.Pool(self.pop_size*2)
         
