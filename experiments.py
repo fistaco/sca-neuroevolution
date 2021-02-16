@@ -88,9 +88,9 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
     # print(f"Key rank on test set: {key_rank}")
 
 
-def single_ga_experiment():
+def single_ga_experiment(remote_loc=False):
     (x_train, y_train, x_atk, y_atk, train_meta, atk_meta) = \
-        load_ascad_data(load_metadata=True)
+        load_ascad_data(load_metadata=True, remote_loc=True)
     original_input_shape = (700, 1)
     x_train, y_train = x_train[:45000], y_train[:45000]
 
@@ -116,7 +116,7 @@ def single_ga_experiment():
     cnn = load_small_cnn_ascad_no_batch_norm()
     run_ga(
         max_gens=100,
-        pop_size=250,
+        pop_size=50,
         mut_power=0.03,
         mut_rate=0.04,
         crossover_rate=0.5,
@@ -133,7 +133,7 @@ def single_ga_experiment():
         true_validation_subkey=target_train_subkey,
         true_atk_subkey=target_atk_subkey,
         parallelise=True,
-        experiment_name=gen_experiment_name(250, 1024)
+        experiment_name=gen_experiment_name(50, 1024)
     )
 
 

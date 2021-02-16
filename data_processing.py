@@ -5,12 +5,17 @@ from sklearn import preprocessing
 
 
 def load_ascad_data(data_filepath="./../ASCAD_data/ASCAD_databases/ASCAD.h5",
-                    load_metadata=False):
+                    load_metadata=False, remote_loc=False):
     """
     Loads the ASCAD data set with h5py and returns a tuple containing the
     training traces, training labels, attack traces, attack labels, and
     optionally the metadata.
     """
+    # Use the absolute directory from the TUD HPC project dir if desired
+    if remote_loc:
+        data_filepath = "/tudelft.net/staff-bulk/ewi/insy/CYS/spicek/" + \
+                        "fschijlen/weight/ASCAD_data/ASCAD_databases/ASCAD.h5"
+
     input_file = h5py.File(data_filepath, "r")
 
     # Load traces and their corresponding labels
