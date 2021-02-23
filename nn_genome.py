@@ -12,6 +12,8 @@ class NeuralNetworkGenome:
         self.fitness = -1
         # TODO: multiple ways of initialising weights?
 
+        self.avg_parent_fitness = 255
+
     def random_weight_init(self):
         """
         Sets each weight to a random value in the range [0, 1).
@@ -35,8 +37,8 @@ class NeuralNetworkGenome:
                     mut_val = np.random.uniform() * 2 * mut_power - mut_power
                     child.weights[i][..., j] += mut_val
 
-        # # Manually reconfigure model weights
-        # self.model.set_weights(self.weights)
+        if apply_fitness_inheritance:
+            child.avg_parent_fitness = self.fitness
 
         return child
 
@@ -55,8 +57,8 @@ class NeuralNetworkGenome:
                 if np.random.uniform() < 0.5:
                     child.weights[i][..., j] = other_w
 
-        # # Manually reconfigure model weights
-        # self.model.set_weights(self.weights)
+        if apply_fitness_inheritance:
+            child.avg_parent_fitness = (self.fitness + other.fitness)/2
 
         return child
 

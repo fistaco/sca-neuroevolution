@@ -1,4 +1,5 @@
 import multiprocessing as mp
+mp.set_start_method("spawn", force=True)
 import os
 import pickle
 import random as rand
@@ -17,7 +18,8 @@ from nn_genome import NeuralNetworkGenome
 class GeneticAlgorithm:
     def __init__(self, max_gens, pop_size, mut_power, mut_rate, crossover_rate,
                  mut_power_decay_rate, truncation_proportion, atk_set_size,
-                 parallelise=False, elitism=False):
+                 parallelise=False, apply_fitness_inheritance=False,
+                 elitism=False):
         self.max_gens = max_gens
         self.pop_size = pop_size
         self.mut_power = mut_power
@@ -27,6 +29,7 @@ class GeneticAlgorithm:
         self.truncation_proportion = truncation_proportion
         self.atk_set_size = atk_set_size
         self.parallelise = parallelise
+        self.apply_fi = apply_fitness_inheritance
 
         # Maintain the population and all offspring in self.population
         # The offspring occupy the second half of the array
@@ -37,10 +40,10 @@ class GeneticAlgorithm:
         self.best_fitness_per_gen = np.empty(max_gens, dtype=np.uint8)
 
         # Parallelisation variables
-        # pool_size = round(min(self.pop_size*2, mp.cpu_count()*0.5)
-        pool_size = min(self.pop_size*2, len(os.sched_getaffinity(0)))
+        pool_size = round(min(self.pop_size*2, mp.cpu_count()*0.5))
+        # pool_size = min(self.pop_size*2, len(os.sched_getaffinity(0)))
         if self.parallelise:
-            self.pool = mp.Pool(self.pop_size*2)
+            self.pool = mp.Pool(pool_size)
         
         # Use a dictionary to enable simple selection method parametrisation
         selection_methods = {
@@ -69,9 +72,13 @@ class GeneticAlgorithm:
             (x_atk, y_atk) = \
                 sample_data(self.atk_set_size, x_atk_full, y_atk_full)
 
-            # Evaluate the fitness of each individual and update the best one
+            # Evaluate the fitness of each individual
             print("Evaluating fitness values...")
             self.evaluate_fitness(x_atk, y_atk, ptexts, true_subkey, subkey_i)
+            if self.apply_fi:
+                self.adjust_fitness()
+
+            # Update the best known individual
             best_idx = np.argmin(self.fitnesses)
             best_fitness = self.fitnesses[best_idx]
             best_individual = self.population[best_idx]
@@ -124,6 +131,21 @@ class GeneticAlgorithm:
             for (i, indiv) in enumerate(self.population):
                 self.fitnesses[i] = \
                     evaluate_fitness(indiv.weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
+                indiv.fitness = self.fitnesses[i]
+    
+    def adjust_fitness(self, fi_decay=0.2):
+        """
+        Adjusts each individual's fitness based on that of their parent(s) by
+        applying fitness inheritance.
+
+        Arguments:
+            fi_decay: The fitness inheritance decay, which dictates the
+            impact of the fitness of an individual's parent(s).
+        """
+        for (i, indiv) in enumerate(self.population):
+            indiv.fitness = self.fitnesses[i] = round(
+                (indiv.fitness + indiv.avg_parent_fitness * (1 - fi_decay))/2
+            )
 
     def roulette_wheel_selection(self):
         """
@@ -192,9 +214,9 @@ class GeneticAlgorithm:
 
             if np.random.uniform() < 0.5:
                 parent1 = np.random.choice(self.population[:self.pop_size])
-                offspring[i] = parent0.crossover(parent1)
+                offspring[i] = parent0.crossover(parent1, self.apply_fi)
             else:
-                offspring[i] = parent0.mutate(self.mut_power, self.mut_rate)
+                offspring[i] = parent0.mutate(self.mut_power, self.mut_rate, self.apply_fi)
         
         return offspring
     
@@ -203,7 +225,7 @@ class GeneticAlgorithm:
         Saves the results, i.e. the best individual and the best fitnesses per
         generation, to a pickle file for later use.
         """
-        with open(f"{experiment_name}_ga_results.pickle", "wb") as f:
+        with open(f"./results/{experiment_name}_ga_results.pickle", "wb") as f:
             ga_results = (best_indiv, self.best_fitness_per_gen)
             pickle.dump(ga_results, f)
 

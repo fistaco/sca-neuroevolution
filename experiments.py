@@ -36,7 +36,7 @@ def ga_grid_search():
 def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
            mut_power_decay_rate, truncation_proportion, atk_set_size, nn,
            x_valid, y_valid, ptexts_valid, x_test, y_test, ptexts_test,
-           true_validation_subkey, true_atk_subkey, parallelise,
+           true_validation_subkey, true_atk_subkey, parallelise, apply_fi,
            experiment_name="test"):
     """
     Runs a genetic algorithm with the given parameters and tests the resulting
@@ -52,7 +52,8 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
         mut_power_decay_rate,
         truncation_proportion,
         atk_set_size,
-        parallelise
+        parallelise,
+        apply_fi
     )
 
     # Obtain the best network resulting from the GA
@@ -90,7 +91,7 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
 
 def single_ga_experiment(remote_loc=False):
     (x_train, y_train, x_atk, y_atk, train_meta, atk_meta) = \
-        load_ascad_data(load_metadata=True, remote_loc=True)
+        load_ascad_data(load_metadata=True, remote_loc=remote_loc)
     original_input_shape = (700, 1)
     x_train, y_train = x_train[:45000], y_train[:45000]
 
@@ -114,15 +115,18 @@ def single_ga_experiment(remote_loc=False):
 
     # Train the CNN by running it through the GA
     cnn = load_small_cnn_ascad_no_batch_norm()
+
+    pop_size = 50
+    atk_set_size = 32
     run_ga(
         max_gens=100,
-        pop_size=50,
+        pop_size=pop_size,
         mut_power=0.03,
         mut_rate=0.04,
         crossover_rate=0.5,
         mut_power_decay_rate=0.99,
         truncation_proportion=0.4,
-        atk_set_size=1024,
+        atk_set_size=atk_set_size,
         nn=cnn,
         x_valid=x_train,
         y_valid=y_train,
@@ -133,7 +137,8 @@ def single_ga_experiment(remote_loc=False):
         true_validation_subkey=target_train_subkey,
         true_atk_subkey=target_atk_subkey,
         parallelise=True,
-        experiment_name=gen_experiment_name(50, 1024)
+        apply_fi=True,
+        experiment_name=gen_experiment_name(pop_size, atk_set_size)
     )
 
 
