@@ -14,7 +14,7 @@ def load_ascad_data(data_filepath="./../ASCAD_data/ASCAD_databases/ASCAD.h5",
     # Use the absolute directory from the TUD HPC project dir if desired
     if remote_loc:
         data_filepath = "/tudelft.net/staff-bulk/ewi/insy/CYS/spicek/" + \
-                        "fschijlen/weight/ASCAD_data/ASCAD_databases/ASCAD.h5"
+                        "fschijlen/ASCAD_data/ASCAD_databases/ASCAD.h5"
 
     input_file = h5py.File(data_filepath, "r")
 
