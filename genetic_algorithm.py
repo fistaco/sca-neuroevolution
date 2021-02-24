@@ -85,7 +85,8 @@ class GeneticAlgorithm:
 
             print("Selecting individuals...")
             # Rest of GA main loop, i.e. selection & offspring production
-            self.population[:self.pop_size] = self.roulette_wheel_selection()  # TODO: add truncation selection?
+            # self.population[:self.pop_size] = self.roulette_wheel_selection()  # TODO: add truncation selection?
+            self.population[:self.pop_size] = self.tournament_selection()
             print("Producing offspring...")
             self.population[self.pop_size:] = self.produce_offpsring()
 
@@ -196,7 +197,7 @@ class GeneticAlgorithm:
             # Compare (t_size - 1) more individuals based on their fitness 
             for j in range(t_size - 1):
                 indiv = np.random.choice(self.population)
-                if indiv.fitness > winner.fitness:
+                if indiv.fitness < winner.fitness:
                     winner = indiv
             
             new_population[i] = winner
