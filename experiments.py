@@ -74,7 +74,8 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
     # evaluate it on the test set
     cnn = load_small_cnn_ascad_no_batch_norm()
     cnn.set_weights(best_indiv.weights)
-    tenfold_ascad_atk_with_varying_size(
+    kfold_ascad_atk_with_varying_size(
+        10,
         cnn,
         2,
         experiment_name,
@@ -199,7 +200,8 @@ def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=False):
     # cnn = build_small_cnn_ascad()
     
     # print(f"Keyrank = {exec_sca(cnn, x_atk, y_atk, atk_ptexts, target_subkey)}")
-    tenfold_ascad_atk_with_varying_size(
+    kfold_ascad_atk_with_varying_size(
+        10,
         cnn,
         subkey_idx=subkey_idx,
         experiment_name="test",
@@ -207,7 +209,7 @@ def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=False):
     )
     
 
-def tenfold_ascad_atk_with_varying_size(nn, subkey_idx=2, experiment_name="",
+def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
     atk_data=None):
     # Use the given data if possible. Load 10k ASCAD attack traces otherwise.
     (x_atk, y_atk, target_subkey, atk_ptexts) = \
@@ -219,10 +221,10 @@ def tenfold_ascad_atk_with_varying_size(nn, subkey_idx=2, experiment_name="",
 
     # For each fold, store the key rank for all attack set sizes
     atk_set_size = len(x_atk)
-    fold_key_ranks = np.zeros((atk_set_size, 10), dtype=np.uint8)
+    fold_key_ranks = np.zeros((atk_set_size, k), dtype=np.uint8)
 
     # Reuse subsets of the predictions to simulate attacks over different folds
-    for fold in range(10):
+    for fold in range(k):
         print(f"Obtaining key ranks for fold {fold}...")
         y_pred_probs, atk_ptexts = shuffle_data(y_pred_probs, atk_ptexts)
 
