@@ -19,7 +19,7 @@ class GeneticAlgorithm:
     def __init__(self, max_gens, pop_size, mut_power, mut_rate, crossover_rate,
                  mut_power_decay_rate, truncation_proportion, atk_set_size,
                  parallelise=False, apply_fitness_inheritance=False,
-                 elitism=False):
+                 select_fun="roulette_wheel", elitism=False):
         self.max_gens = max_gens
         self.pop_size = pop_size
         self.mut_power = mut_power
@@ -50,6 +50,7 @@ class GeneticAlgorithm:
             "roulette_wheel": self.roulette_wheel_selection,
             "tournament": self.tournament_selection
         }
+        self.selection_method = selection_methods[select_fun]
     
     def __del__(self):
         if self.parallelise:
@@ -86,7 +87,8 @@ class GeneticAlgorithm:
             print("Selecting individuals...")
             # Rest of GA main loop, i.e. selection & offspring production
             # self.population[:self.pop_size] = self.roulette_wheel_selection()  # TODO: add truncation selection?
-            self.population[:self.pop_size] = self.tournament_selection()
+            # self.population[:self.pop_size] = self.tournament_selection()
+            self.population[:self.pop_size] = self.selection_method()
             print("Producing offspring...")
             self.population[self.pop_size:] = self.produce_offpsring()
 
@@ -94,8 +96,10 @@ class GeneticAlgorithm:
             # TODO: Test best individual on a separate test to check generalisation
             self.best_fitness_per_gen[gen] = best_fitness
             print(f"Best fitness in generation {gen}: {best_fitness}")
+
+            self.mut_power *= self.mut_power_decay_rate
             gen += 1
-        
+
         return best_individual
 
     def initialise_population(self, nn):

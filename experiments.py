@@ -75,7 +75,7 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
     cnn = load_small_cnn_ascad_no_batch_norm()
     cnn.set_weights(best_indiv.weights)
     kfold_ascad_atk_with_varying_size(
-        10,
+        30,
         cnn,
         2,
         experiment_name,
@@ -118,9 +118,10 @@ def single_ga_experiment(remote_loc=False):
     cnn = load_small_cnn_ascad_no_batch_norm()
 
     pop_size = 50
-    atk_set_size = 32
+    atk_set_size = 4
+    select_fun = "tournament"
     run_ga(
-        max_gens=100,
+        max_gens=50,
         pop_size=pop_size,
         mut_power=0.03,
         mut_rate=0.04,
@@ -139,8 +140,16 @@ def single_ga_experiment(remote_loc=False):
         true_atk_subkey=target_atk_subkey,
         parallelise=True,
         apply_fi=True,
-        experiment_name=gen_experiment_name(pop_size, atk_set_size)
+        select_fun=select_fun,
+        experiment_name=gen_experiment_name(pop_size, atk_set_size, select_fun)
     )
+
+
+def averaged_ga_experiment(amount=10):
+    """
+    Runs a given amount of 
+    """
+    pass
 
 
 def small_cnn_sgd_sca(save=True, subkey_idx=2):
@@ -201,7 +210,7 @@ def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=False):
     
     # print(f"Keyrank = {exec_sca(cnn, x_atk, y_atk, atk_ptexts, target_subkey)}")
     kfold_ascad_atk_with_varying_size(
-        10,
+        30,
         cnn,
         subkey_idx=subkey_idx,
         experiment_name="test",
