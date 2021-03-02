@@ -164,6 +164,7 @@ class GeneticAlgorithm:
             #     (indiv.fitness + indiv.avg_parent_fitness * (1 - fi_decay))/2
             # )
             f, fp = indiv.fitness, indiv.avg_parent_fitness
+
             indiv.fitness = self.fitnesses[i] = \
                 adjust_fitness(f, fp, fi_decay, self.fitness_scaling)
 
@@ -242,12 +243,29 @@ class GeneticAlgorithm:
     
     def save_results(self, best_indiv, experiment_name):
         """
-        Saves the results, i.e. the best individual and the best fitnesses per
-        generation, to a pickle file for later use.
+        Saves the results, i.e. the best individual, the best fitnesses per
+        generation, and a list of the top 10 individuals, to a pickle file for
+        later use.
         """
         with open(f"results/{experiment_name}_ga_results.pickle", "wb") as f:
-            ga_results = (best_indiv, self.best_fitness_per_gen)
+            top_ten_indices = np.argsort(self.fitnesses)[-10:]
+            top_ten = self.population[top_ten_indices]
+
+            ga_results = (best_indiv, self.best_fitness_per_gen, top_ten)
             pickle.dump(ga_results, f)
+
+    @staticmethod
+    def load_results(experiment_name):
+        """
+        Loads an experiment's results, i.e. the best individual, the best
+        fitnesses per generation, and a list of the top 10 individuals, from a
+        pickle file.
+        """
+        ga_results = None
+        with open(f"results/{experiment_name}_ga_results.pickle", "rb") as f:
+            ga_results = pickle.load(f)
+
+        return ga_results
 
 
 def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx,
