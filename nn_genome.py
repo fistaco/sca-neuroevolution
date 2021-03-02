@@ -3,16 +3,17 @@ from copy import deepcopy
 from tensorflow import keras
 
 from helpers import exec_sca
+from metrics import MetricType
 
 
 class NeuralNetworkGenome:
-    def __init__(self, init_weights):
+    def __init__(self, init_weights, init_parent_fitness=255):
         # self.model = model
         self.weights = deepcopy(init_weights)  # List of numpy arrays
         self.fitness = -1
         # TODO: multiple ways of initialising weights?
 
-        self.avg_parent_fitness = 255
+        self.avg_parent_fitness = init_parent_fitness
 
     def random_weight_init(self):
         """

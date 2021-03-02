@@ -9,7 +9,7 @@ import numpy as np
 import tensorflow as tf
 
 from data_processing import sample_data
-from helpers import exec_sca, compute_fitness
+from helpers import exec_sca, compute_fitness, calc_max_fitness
 from metrics import MetricType
 from models import (build_small_cnn_ascad, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm)
@@ -20,7 +20,8 @@ class GeneticAlgorithm:
     def __init__(self, max_gens, pop_size, mut_power, mut_rate, crossover_rate,
                  mut_power_decay_rate, truncation_proportion, atk_set_size,
                  parallelise=False, apply_fitness_inheritance=False,
-                 select_fun="roulette_wheel", elitism=False):
+                 select_fun="roulette_wheel", metric_type=MetricType.KEYRANK,
+                 elitism=False):
         self.max_gens = max_gens
         self.pop_size = pop_size
         self.mut_power = mut_power
@@ -31,14 +32,23 @@ class GeneticAlgorithm:
         self.atk_set_size = atk_set_size
         self.parallelise = parallelise
         self.apply_fi = apply_fitness_inheritance
+        self.metric_type = metric_type
 
         # Maintain the population and all offspring in self.population
         # The offspring occupy the second half of the array
         self.population = np.empty(pop_size*2, dtype=object)
-        self.fitnesses = np.full(pop_size*2, 255, dtype=np.uint8)
 
-        # Store useful information
-        self.best_fitness_per_gen = np.empty(max_gens, dtype=np.uint8)
+        # Precompute fitness-related variables
+        self.max_fitness = max_base_f = \
+            100 if metric_type == MetricType.ACCURACY else 255
+        max_unscaled_adj_fitness = adjust_fitness(max_base_f, max_base_f, 0.2)
+        self.fitness_scaling = (1/max_unscaled_adj_fitness) * max_base_f
+
+        # Store fitness-related information in arrays of the appropriate dtype
+        dtype = np.uint8 if metric_type == MetricType.KEYRANK else np.float64
+        self.fitness_dtype = dtype
+        self.fitnesses = np.full(pop_size*2, self.max_fitness, dtype=dtype)
+        self.best_fitness_per_gen = np.empty(max_gens, dtype=dtype)
 
         # Parallelisation variables
         pool_size = round(min(self.pop_size*2, mp.cpu_count()*0.5))
@@ -78,7 +88,7 @@ class GeneticAlgorithm:
             print("Evaluating fitness values...")
             self.evaluate_fitness(x_atk, y_atk, ptexts, true_subkey, subkey_i)
             if self.apply_fi:
-                self.adjust_fitness()
+                self.adjust_fitnesses()
 
             # Update the best known individual
             best_idx = np.argmin(self.fitnesses)
@@ -101,17 +111,19 @@ class GeneticAlgorithm:
             self.mut_power *= self.mut_power_decay_rate
             gen += 1
 
+        if self.parallelise:
+            self.pool.close()
+
         return best_individual
 
     def initialise_population(self, nn):
         """
         Initialises a population of NNs with the given architecture parameters.
         """
-        nn_weights = nn.get_weights()
+        weights = nn.get_weights()
         for i in range(len(self.population)):
-            self.population[i] = NeuralNetworkGenome(nn_weights)
+            self.population[i] = NeuralNetworkGenome(weights, self.max_fitness)
             self.population[i].random_weight_init()
-            # TODO: maybe initialise weights randomly?
             # TODO: parallelise?
 
     def evaluate_fitness(self, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
@@ -122,7 +134,7 @@ class GeneticAlgorithm:
         if self.parallelise:
             # Set up a tuple of arguments for each concurrent process
             argss = [
-                (self.population[i].weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
+                (self.population[i].weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx, self.metric_type)
                 for i in range(len(self.population))
             ]
             # Run fitness evaluations in parallel
@@ -136,10 +148,10 @@ class GeneticAlgorithm:
             # Run fitness evaluations sequentially
             for (i, indiv) in enumerate(self.population):
                 self.fitnesses[i] = \
-                    evaluate_fitness(indiv.weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
+                    evaluate_fitness(indiv.weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx, self.metric_type)
                 indiv.fitness = self.fitnesses[i]
     
-    def adjust_fitness(self, fi_decay=0.2):
+    def adjust_fitnesses(self, fi_decay=0.2):
         """
         Adjusts each individual's fitness based on that of their parent(s) by
         applying fitness inheritance.
@@ -149,9 +161,12 @@ class GeneticAlgorithm:
             impact of the fitness of an individual's parent(s).
         """
         for (i, indiv) in enumerate(self.population):
-            indiv.fitness = self.fitnesses[i] = round(
-                (indiv.fitness + indiv.avg_parent_fitness * (1 - fi_decay))/2
-            )
+            # indiv.fitness = self.fitnesses[i] = round(
+            #     (indiv.fitness + indiv.avg_parent_fitness * (1 - fi_decay))/2
+            # )
+            f, fp = indiv.fitness, indiv.avg_parent_fitness
+            indiv.fitness = self.fitnesses[i] = \
+                adjust_fitness(f, fp, fi_decay, self.fitness_scaling)
 
     def roulette_wheel_selection(self):
         """
@@ -164,10 +179,10 @@ class GeneticAlgorithm:
         """
         new_population = np.empty(self.pop_size, dtype=object)
 
-        # Invert fitnesses because fitness is minimised and min. fitness = 255
+        # Invert fitnesses because fitness is minimised
         inverted_fitnesses = np.fromiter(
-            (255 - indiv.fitness for indiv in self.population),
-            dtype=np.uint8
+            (self.max_fitness - indiv.fitness for indiv in self.population),
+            dtype=self.fitness_dtype
         )
 
         # Compute their sum so we can compute selection probabilities
@@ -236,7 +251,8 @@ class GeneticAlgorithm:
             pickle.dump(ga_results, f)
 
 
-def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
+def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx,
+                     metric_type=MetricType.KEYRANK):
     """
     Evaluates the fitness of an individual by using its weights to construct a
     new CNN, which is used to execute an SCA on the given data.
@@ -247,6 +263,15 @@ def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
     cnn = load_small_cnn_ascad_no_batch_norm()
     cnn.set_weights(weights)
 
-    metric_type = MetricType.KEYRANK
     return compute_fitness(cnn, x_atk, y_atk, ptexts, metric_type, true_subkey, subkey_idx)
     # return exec_sca(cnn, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
+
+
+def adjust_fitness(fitness, avg_parent_fitness, fi_decay, scaling=1.0):
+    """
+    Adjusts and returns the given individual's fitness based on itself, its
+    average parent fitness, and the given fitness inheritance decay value.
+    """
+    return round(scaling*(
+        fitness + avg_parent_fitness * (1 - fi_decay)
+    ))

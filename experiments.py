@@ -9,7 +9,7 @@ from data_processing import load_ascad_data, load_ascad_atk_variables, \
 from genetic_algorithm import GeneticAlgorithm
 from helpers import exec_sca, label_to_subkey, compute_mem_req, \
     compute_mem_req_from_known_vals, gen_experiment_name
-from metrics import keyrank
+from metrics import keyrank, MetricType
 from models import build_small_cnn_ascad, load_small_cnn_ascad, \
     load_small_cnn_ascad_no_batch_norm, load_nn_from_experiment_results
 from plotting import plot_gens_vs_fitness, plot_n_traces_vs_key_rank
@@ -37,7 +37,7 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
            mut_power_decay_rate, truncation_proportion, atk_set_size, nn,
            x_valid, y_valid, ptexts_valid, x_test, y_test, ptexts_test,
            true_validation_subkey, true_atk_subkey, parallelise, apply_fi,
-           select_fun, experiment_name="test"):
+           select_fun, metric_type, experiment_name="test"):
     """
     Runs a genetic algorithm with the given parameters and tests the resulting
     best individual on the given test set. The best individual, best fitnesses
@@ -54,7 +54,8 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
         atk_set_size,
         parallelise,
         apply_fi,
-        select_fun
+        select_fun,
+        metric_type
     )
 
     # Obtain the best network resulting from the GA
@@ -118,11 +119,11 @@ def single_ga_experiment(remote_loc=False):
     # Train the CNN by running it through the GA
     cnn = load_small_cnn_ascad_no_batch_norm()
 
-    pop_size = 10
+    pop_size = 50
     atk_set_size = 4
     select_fun = "tournament"
     run_ga(
-        max_gens=10,
+        max_gens=100,
         pop_size=pop_size,
         mut_power=0.03,
         mut_rate=0.04,
@@ -142,6 +143,7 @@ def single_ga_experiment(remote_loc=False):
         parallelise=True,
         apply_fi=True,
         select_fun=select_fun,
+        metric_type=MetricType.KEYRANK,
         experiment_name=gen_experiment_name(pop_size, atk_set_size, select_fun)
     )
 

@@ -25,8 +25,8 @@ def compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey,
     network and uses the obtained prediction probabilities to compute the key
     rank and/or accuracy.
 
-    Returns fitness as keyrank, accuracy, or (keyrank - accuracy) depending
-    on the given metric type.
+    Returns fitness as keyrank, (1 - accuracy)*100, or (keyrank - accuracy)
+    depending on the given metric type.
     """
     y_pred_probs = nn.predict(x_atk)
     return evaluate_preds(
@@ -48,7 +48,7 @@ def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
         subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx)
         return keyrank(subkey_probs, true_subkey)
     elif metric_type == MetricType.ACCURACY:
-        return accuracy(preds, true_labels)
+        return (1 - accuracy(preds, true_labels))*100
     elif metric_type == MetricType.KEYRANK_AND_ACCURACY:
         subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx)
         res = keyrank(subkey_probs, true_subkey) - accuracy(preds, true_labels)
@@ -157,3 +157,11 @@ def gen_experiment_name(pop_size, atk_set_size, select_fun):
     Generates an experiment name for a GA run using the given parameters.
     """
     return f"ps{pop_size}-ass{atk_set_size}-{select_fun[0]}select"
+
+
+def calc_max_fitness(metric_type, apply_fi=False, fi_decay=0.2):
+    """
+    Returns the maximum fitness based on the given metric type.
+    """
+    return 100 if metric_type == MetricType.ACCURACY else 255
+

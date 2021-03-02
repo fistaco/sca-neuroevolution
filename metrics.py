@@ -26,7 +26,7 @@ def accuracy(label_pred_probs, true_labels):
         if label_pred == true_labels[i]:
             acc += 1/n_preds
 
-    return acc
+    return np.float64(acc)
 
 
 class MetricType(Enum):
