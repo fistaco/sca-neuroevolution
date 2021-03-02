@@ -39,8 +39,7 @@ class GeneticAlgorithm:
         self.population = np.empty(pop_size*2, dtype=object)
 
         # Precompute fitness-related variables
-        self.max_fitness = max_base_f = \
-            100 if metric_type == MetricType.ACCURACY else 255
+        self.max_fitness = max_base_f = calc_max_fitness(metric_type)
         max_unscaled_adj_fitness = adjust_fitness(max_base_f, max_base_f, 0.2)
         self.fitness_scaling = (1/max_unscaled_adj_fitness) * max_base_f
 
