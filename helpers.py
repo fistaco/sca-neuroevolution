@@ -3,7 +3,7 @@ import pickle
 import numpy as np
 
 from constants import INVERSE_SBOX, SBOX
-from metrics import keyrank
+from metrics import keyrank, accuracy, MetricType
 
 
 def exec_sca(ann_model, x_atk, y_atk, ptexts, true_subkey, subkey_idx=2):
@@ -16,6 +16,46 @@ def exec_sca(ann_model, x_atk, y_atk, ptexts, true_subkey, subkey_idx=2):
     subkey_logprobs = subkey_pred_logprobs(y_pred_probs, ptexts, subkey_idx)
 
     return keyrank(subkey_logprobs, true_subkey)
+
+
+def compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey,
+                    subkey_idx=2):
+    """
+    Executes a side-channel attack on the given traces using the given neural
+    network and uses the obtained prediction probabilities to compute the key
+    rank and/or accuracy.
+
+    Returns fitness as keyrank, accuracy, or (keyrank - accuracy) depending
+    on the given metric type.
+    """
+    y_pred_probs = nn.predict(x_atk)
+    return evaluate_preds(
+        y_pred_probs, metric_type, ptexts, true_subkey, y_atk, subkey_idx
+    )
+
+
+def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
+                   subkey_idx=2):
+    """
+    Evaluates the given predictions using the method indicated by the given
+    metric type and returns the result.
+
+    Arguments:
+        preds: A 2-dimensional array, where the i-th array is a list of
+        prediction probabilities for the i-th trace.
+    """
+    if metric_type == MetricType.KEYRANK:
+        subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx)
+        return keyrank(subkey_probs, true_subkey)
+    elif metric_type == MetricType.ACCURACY:
+        return accuracy(preds, true_labels)
+    elif metric_type == MetricType.KEYRANK_AND_ACCURACY:
+        subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx)
+        res = keyrank(subkey_probs, true_subkey) - accuracy(preds, true_labels)
+        return res
+    else:
+        print("Encountered invalid metric type. Quitting.")
+        exit(1)
 
 
 def compute_label(ptext, subkey, mask=0):

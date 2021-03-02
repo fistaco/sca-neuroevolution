@@ -9,7 +9,8 @@ import numpy as np
 import tensorflow as tf
 
 from data_processing import sample_data
-from helpers import exec_sca
+from helpers import exec_sca, compute_fitness
+from metrics import MetricType
 from models import (build_small_cnn_ascad, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm)
 from nn_genome import NeuralNetworkGenome
@@ -230,7 +231,7 @@ class GeneticAlgorithm:
         Saves the results, i.e. the best individual and the best fitnesses per
         generation, to a pickle file for later use.
         """
-        with open(f"./results/{experiment_name}_ga_results.pickle", "wb") as f:
+        with open(f"results/{experiment_name}_ga_results.pickle", "wb") as f:
             ga_results = (best_indiv, self.best_fitness_per_gen)
             pickle.dump(ga_results, f)
 
@@ -245,4 +246,7 @@ def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
     """
     cnn = load_small_cnn_ascad_no_batch_norm()
     cnn.set_weights(weights)
-    return exec_sca(cnn, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
+
+    metric_type = MetricType.KEYRANK
+    return compute_fitness(cnn, x_atk, y_atk, ptexts, metric_type, true_subkey, subkey_idx)
+    # return exec_sca(cnn, x_atk, y_atk, ptexts, true_subkey, subkey_idx)

@@ -37,7 +37,7 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
            mut_power_decay_rate, truncation_proportion, atk_set_size, nn,
            x_valid, y_valid, ptexts_valid, x_test, y_test, ptexts_test,
            true_validation_subkey, true_atk_subkey, parallelise, apply_fi,
-           experiment_name="test"):
+           select_fun, experiment_name="test"):
     """
     Runs a genetic algorithm with the given parameters and tests the resulting
     best individual on the given test set. The best individual, best fitnesses
@@ -53,7 +53,8 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
         truncation_proportion,
         atk_set_size,
         parallelise,
-        apply_fi
+        apply_fi,
+        select_fun
     )
 
     # Obtain the best network resulting from the GA
@@ -117,11 +118,11 @@ def single_ga_experiment(remote_loc=False):
     # Train the CNN by running it through the GA
     cnn = load_small_cnn_ascad_no_batch_norm()
 
-    pop_size = 50
+    pop_size = 10
     atk_set_size = 4
     select_fun = "tournament"
     run_ga(
-        max_gens=50,
+        max_gens=10,
         pop_size=pop_size,
         mut_power=0.03,
         mut_rate=0.04,
