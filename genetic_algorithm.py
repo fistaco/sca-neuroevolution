@@ -96,9 +96,7 @@ class GeneticAlgorithm:
 
             print("Selecting individuals...")
             # Rest of GA main loop, i.e. selection & offspring production
-            # self.population[:self.pop_size] = self.roulette_wheel_selection()  # TODO: add truncation selection?
-            # self.population[:self.pop_size] = self.tournament_selection()
-            self.population[:self.pop_size] = self.selection_method()
+            self.population[:self.pop_size] = self.selection_method()  # TODO: Add truncatiom selection?
             print("Producing offspring...")
             self.population[self.pop_size:] = self.produce_offpsring()
 
@@ -137,12 +135,11 @@ class GeneticAlgorithm:
                 for i in range(len(self.population))
             ]
             # Run fitness evaluations in parallel
-            # self.fitnesses = self.pool.starmap(exec_sca, argss)
-            self.fitnesses = self.pool.starmap(evaluate_fitness, argss)
+            fitnesses = self.pool.starmap(evaluate_fitness, argss)
 
             # Update the individuals' fitness values
             for i in range(len(self.population)):
-                self.population[i].fitness = self.fitnesses[i]
+                self.population[i].fitness = self.fitnesses[i] = fitnesses[i]
         else:
             # Run fitness evaluations sequentially
             for (i, indiv) in enumerate(self.population):
@@ -289,6 +286,6 @@ def adjust_fitness(fitness, avg_parent_fitness, fi_decay, scaling=1.0):
     Adjusts and returns the given individual's fitness based on itself, its
     average parent fitness, and the given fitness inheritance decay value.
     """
-    return round(scaling*(
+    return scaling*(
         fitness + avg_parent_fitness * (1 - fi_decay)
-    ))
+    )
