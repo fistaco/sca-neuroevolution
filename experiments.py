@@ -1,17 +1,20 @@
-import numpy as np
+import os
 import pickle
-import tensorflow as tf
-from tensorflow import keras
 from time import time
 
-from data_processing import load_ascad_data, load_ascad_atk_variables, \
-    sample_data, shuffle_data, scale_inputs
+import numpy as np
+import tensorflow as tf
+from tensorflow import keras
+
+from data_processing import (load_ascad_atk_variables, load_ascad_data,
+                             sample_data, scale_inputs, shuffle_data)
 from genetic_algorithm import GeneticAlgorithm
-from helpers import exec_sca, label_to_subkey, compute_mem_req, \
-    compute_mem_req_from_known_vals, gen_experiment_name
-from metrics import keyrank, MetricType
-from models import build_small_cnn_ascad, load_small_cnn_ascad, \
-    load_small_cnn_ascad_no_batch_norm, load_nn_from_experiment_results
+from helpers import (compute_mem_req, compute_mem_req_from_known_vals,
+                     exec_sca, gen_experiment_name, label_to_subkey)
+from metrics import MetricType, keyrank
+from models import (build_small_cnn_ascad, load_nn_from_experiment_results,
+                    load_small_cnn_ascad, load_small_cnn_ascad_no_batch_norm,
+                    load_small_mlp_ascad)
 from plotting import plot_gens_vs_fitness, plot_n_traces_vs_key_rank
 
 
@@ -36,8 +39,8 @@ def ga_grid_search():
 def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
            mut_power_decay_rate, truncation_proportion, atk_set_size, nn,
            x_valid, y_valid, ptexts_valid, x_test, y_test, ptexts_test,
-           true_validation_subkey, true_atk_subkey, parallelise, apply_fi,
-           select_fun, metric_type, experiment_name="test"):
+           true_validation_subkey, true_atk_subkey, subkey_idx, parallelise,
+           apply_fi, select_fun, metric_type, experiment_name="test"):
     """
     Runs a genetic algorithm with the given parameters and tests the resulting
     best individual on the given test set. The best individual, best fitnesses
@@ -61,7 +64,7 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
     # Obtain the best network resulting from the GA
     start = time()
     best_indiv = \
-        ga.run(nn, x_valid, y_valid, ptexts_valid, true_validation_subkey)
+        ga.run(nn, x_valid, y_valid, ptexts_valid, true_validation_subkey, subkey_idx)
     end = time()
     t = int(end-start)
     print(f"Time elapsed: {t}")
@@ -74,18 +77,17 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
 
     # Create a new model from the best individual's weights and properly
     # evaluate it on the test set
-    cnn = load_small_cnn_ascad_no_batch_norm()
-    cnn.set_weights(best_indiv.weights)
+    nn.set_weights(best_indiv.weights)
     kfold_ascad_atk_with_varying_size(
         30,
-        cnn,
+        nn,
         2,
         experiment_name,
         atk_data=(x_test, y_test, true_atk_subkey, ptexts_test)
     )
 
-    # # Evaluate the best network's performance on the test set
-    key_rank = exec_sca(cnn, x_test, y_test, ptexts_test, true_atk_subkey)
+    # Evaluate the best network's performance on the test set
+    key_rank = exec_sca(nn, x_test, y_test, ptexts_test, true_atk_subkey)
     print(f"Key rank on test set with exec_sca: {key_rank}")
 
     print(f"Key rank on validation set: {best_indiv.fitness}")
@@ -108,19 +110,21 @@ def single_ga_experiment(remote_loc=False):
     # Convert labels to one-hot encoding probabilities
     y_train_converted = keras.utils.to_categorical(y_train, num_classes=256)
 
-    # Scale all trace inputs to range [0, 1]
-    x_train = scale_inputs(x_train)
-    x_atk = scale_inputs(x_atk)
+    # Scale all trace inputs to speed up training or boost MLP performance
+    # TODO: Apply scaling and reshaping based on the NN type, which should be easy to switch
+    x_train = scale_inputs(x_train, low=-1)
+    x_atk = scale_inputs(x_atk, low=-1)
 
     # Reshape the trace input to come in singleton arrays for CNN compatibility
-    x_train = x_train.reshape((x_train.shape[0], x_train.shape[1], 1))
-    x_atk = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
+    # x_train = x_train.reshape((x_train.shape[0], x_train.shape[1], 1))
+    # x_atk = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
 
     # Train the CNN by running it through the GA
-    cnn = load_small_cnn_ascad_no_batch_norm()
+    # nn = load_small_cnn_ascad_no_batch_norm()
+    nn = load_small_mlp_ascad()
 
     pop_size = 50
-    atk_set_size = 4
+    atk_set_size = 16
     select_fun = "tournament"
     run_ga(
         max_gens=100,
@@ -131,7 +135,7 @@ def single_ga_experiment(remote_loc=False):
         mut_power_decay_rate=0.99,
         truncation_proportion=0.4,
         atk_set_size=atk_set_size,
-        nn=cnn,
+        nn=nn,
         x_valid=x_train,
         y_valid=y_train,
         ptexts_valid=train_ptexts,
@@ -140,6 +144,7 @@ def single_ga_experiment(remote_loc=False):
         ptexts_test=atk_ptexts,
         true_validation_subkey=target_train_subkey,
         true_atk_subkey=target_atk_subkey,
+        subkey_idx=subkey_idx,
         parallelise=True,
         apply_fi=True,
         select_fun=select_fun,
@@ -148,9 +153,63 @@ def single_ga_experiment(remote_loc=False):
     )
 
 
-def averaged_ga_experiment(amount=10):
+def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
+           crossover_rate, mut_power_decay_rate, truncation_proportion,
+           atk_set_size, nn, x_valid, y_valid, ptexts_valid, x_test, y_test,
+           ptexts_test, true_validation_subkey, true_atk_subkey, parallelise,
+           apply_fi, select_fun, metric_type, n_experiments=10,
+           experiment_name="test"):
     """
-    Runs a given amount of 
+    Runs a given amount of GA experiments with the given parameters and returns
+    the average key rank obtained with the full given attack set.
+
+    The results of each run are stored in a directory specific to this
+    experiment.
+    """
+    # Create results directory if necessary
+    dir_path = f"results/{experiment_name}/"
+    if not os.path.exists(dir_path):
+        os.mkdir(dir_path)
+
+    avg_keyrank = 0
+    for i in range(n_experiments):
+        ga = GeneticAlgorithm(
+            max_gens,
+            pop_size,
+            mut_power,
+            mut_rate,
+            crossover_rate,
+            mut_power_decay_rate,
+            truncation_proportion,
+            atk_set_size,
+            parallelise,
+            apply_fi,
+            select_fun,
+            metric_type
+        )
+
+        best_indiv = \
+            ga.run(nn, x_valid, y_valid, ptexts_valid, true_validation_subkey)
+
+        # Save and plot results # TODO: save results in a directory allocated to this experiment
+        ga.save_results(best_indiv, f"{experiment_name}/run-{i}")
+        # plot_gens_vs_fitness(ga.best_fitness_per_gen, experiment_name)  # TODO: plot each experiment in the same graph
+
+        # Create a new model from the best individual's weights and evaluate it
+        cnn = load_small_cnn_ascad_no_batch_norm()
+        cnn.set_weights(best_indiv.weights)
+        key_rank = exec_sca(cnn, x_test, y_test, ptexts_test, true_atk_subkey)
+
+        avg_keyrank += key_rank/n_experiments
+
+    return avg_keyrank
+
+
+def ensemble_model_sca(nns, n_folds):
+    """
+    Evaluates an ensemble of the given neural networks (nns) on the given
+    attack set over several folds. This is accomplished by using the bagging
+    method, i.e. summing the prediction probabilities of each model.
     """
     pass
 

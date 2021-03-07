@@ -12,7 +12,7 @@ from data_processing import sample_data
 from helpers import exec_sca, compute_fitness, calc_max_fitness
 from metrics import MetricType
 from models import (build_small_cnn_ascad, load_small_cnn_ascad,
-                    load_small_cnn_ascad_no_batch_norm)
+                    load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad)
 from nn_genome import NeuralNetworkGenome
 
 
@@ -274,10 +274,11 @@ def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx,
     Returns:
         The key rank obtained with the SCA.
     """
-    cnn = load_small_cnn_ascad_no_batch_norm()
-    cnn.set_weights(weights)
+    # nn = load_small_cnn_ascad_no_batch_norm()
+    nn = load_small_mlp_ascad()
+    nn.set_weights(weights)
 
-    return compute_fitness(cnn, x_atk, y_atk, ptexts, metric_type, true_subkey, subkey_idx)
+    return compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey, subkey_idx)
     # return exec_sca(cnn, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
 
 

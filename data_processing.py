@@ -113,14 +113,14 @@ def train_test_split(x, y, train_proportion):
     return (x[:cutoff], x[cutoff:], y[:cutoff], y[cutoff:])
 
 
-def scale_inputs(inputs):
+def scale_inputs(inputs, low=0):
     """
-    Scales the given inputs uniformly to put them in range [0, 1].
+    Scales the given inputs uniformly to put them in range [low, 1].
 
     Arguments:
         xs: A 2-dimensional array of trace inputs.
     """
-    return preprocessing.MinMaxScaler((0, 1)).fit_transform(inputs)
+    return preprocessing.MinMaxScaler((low, 1)).fit_transform(inputs)
 
 
 def to_uint8(data_set):
