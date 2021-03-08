@@ -245,7 +245,7 @@ class GeneticAlgorithm:
         later use.
         """
         with open(f"results/{experiment_name}_ga_results.pickle", "wb") as f:
-            top_ten_indices = np.argsort(self.fitnesses)[-10:]
+            top_ten_indices = np.argsort(self.fitnesses)[:10]
             top_ten = self.population[top_ten_indices]
 
             ga_results = (best_indiv, self.best_fitness_per_gen, top_ten)
