@@ -62,7 +62,7 @@ def build_small_cnn_ascad_no_batch_norm(save=False):
     
     if save:
         cnn.save("./trained_models/efficient_cnn_ascad_model_17kw_no_bn.h5")
-    
+
     return cnn
 
 
@@ -74,6 +74,66 @@ def load_small_cnn_ascad_no_batch_norm():
     optimisation through a GA.
     """
     path = "./trained_models/efficient_cnn_ascad_model_17kw_no_bn.h5"
+    return keras.models.load_model(path, compile=False)
+
+
+def build_small_mlp_ascad(save=False):
+    """
+    Constructs and returns the small MLP proposed by Wouters et al. to attack
+    the ASCAD data set. This model omits the CONV layer from the model proposed
+    by Zaid et al.
+    """
+    mlp = keras.Sequential(
+        [
+            keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(700,1)),
+            keras.layers.Flatten(),
+            keras.layers.Dense(10, activation=tf.nn.selu),
+            keras.layers.Dense(10, activation=tf.nn.selu),
+            keras.layers.Dense(256, activation=tf.nn.softmax)
+        ]
+    )
+
+    if save:
+        mlp.save("./trained_models/efficient_mlp_ascad_model_6kw.h5")
+
+    return mlp
+
+
+def load_small_mlp_ascad():
+    """
+    Loads an untrained MLP with an architecture proposed by Wouters et al.
+    directly from an HDF5 file and returns it.
+    """
+    path = "./trained_models/efficient_mlp_ascad_model_6kw.h5"
+    return keras.models.load_model(path, compile=False)
+
+
+def build_small_cnn_ascad_trainable_conv():
+    """
+    Builds and returns a CNN where only the CONV layer is trainable. Note that
+    the batch normalisation layer is "trained" during this process as well.
+    """
+    cnn = keras.Sequential(
+        [
+            keras.layers.Conv1D(4, 1, activation=tf.nn.selu, padding='same', input_shape=(700,1), kernel_initializer=keras.initializers.he_uniform()),
+            keras.layers.BatchNormalization(),
+            keras.layers.AveragePooling1D(pool_size=2, strides=2),
+            keras.layers.Flatten(),
+            keras.layers.Dense(10, activation=tf.nn.selu, kernel_initializer=keras.initializers.he_uniform(), trainable=False),
+            keras.layers.Dense(10, activation=tf.nn.selu, kernel_initializer=keras.initializers.he_uniform(), trainable=False),
+            keras.layers.Dense(256, activation=tf.nn.softmax, trainable=False)
+        ]
+    )
+
+    return cnn
+
+
+def load_small_cnn_ascad_trainable_conv():
+    """
+    Loads and returns a CNN where only the CONV layer is trainable. Note that
+    the model includes a trained batch normalisation layer.
+    """
+    path = "./trained_models/efficient_cnn_ascad_trained_conv.h5"
     return keras.models.load_model(path, compile=False)
 
 
