@@ -10,19 +10,22 @@ from data_processing import (load_ascad_atk_variables, load_ascad_data,
                              sample_data, scale_inputs, shuffle_data)
 from genetic_algorithm import GeneticAlgorithm
 from helpers import (compute_mem_req, compute_mem_req_from_known_vals,
-                     exec_sca, gen_experiment_name, label_to_subkey)
+                     exec_sca, gen_experiment_name, label_to_subkey,
+                     kfold_mean_key_ranks)
 from metrics import MetricType, keyrank
 from models import (build_small_cnn_ascad, load_nn_from_experiment_results,
                     load_small_cnn_ascad, load_small_cnn_ascad_no_batch_norm,
-                    load_small_mlp_ascad)
+                    load_small_mlp_ascad, build_small_cnn_ascad_trainable_conv)
 from plotting import plot_gens_vs_fitness, plot_n_traces_vs_key_rank
 
 
 def ga_grid_search():
     pop_sizes = np.arange(25, 251, 75)  # 4 values
-    mut_pows = np.arange(0.01, 0.1, 0.02)  # 5 values
+    mut_pows = np.arange(0.01, 0.08, 0.02)  # 4 values
     mut_rates = np.arange(0.01, 0.11, 0.03)  # 4 values
-    atk_set_sizes = np.array([2, 16, 128, 1024])  # 4 values
+    mut_pow_dec_rates = np.array([0.99, 0.999, 1.0]) # 3 values
+    fi_dec_rates = np.arange(0.0, 0.5, 0.2) # 3 values
+    atk_set_sizes = np.array([8, 16, 64, 256])  # 4 values
     selection_methods = np.array(["roulette_wheel", "tournament"])  # 2 values
     # TODO: test different weight init versions
     # TODO: Only test small atk set sizes with fitness inheritance enabled
@@ -94,7 +97,7 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
     # print(f"Key rank on test set: {key_rank}")
 
 
-def single_ga_experiment(remote_loc=False):
+def single_ga_experiment(remote_loc=False, use_mlp=False):
     (x_train, y_train, x_atk, y_atk, train_meta, atk_meta) = \
         load_ascad_data(load_metadata=True, remote_loc=remote_loc)
     original_input_shape = (700, 1)
@@ -110,18 +113,19 @@ def single_ga_experiment(remote_loc=False):
     # Convert labels to one-hot encoding probabilities
     y_train_converted = keras.utils.to_categorical(y_train, num_classes=256)
 
-    # Scale all trace inputs to speed up training or boost MLP performance
+    # Scale all trace inputs to [low, 1]
     # TODO: Apply scaling and reshaping based on the NN type, which should be easy to switch
-    x_train = scale_inputs(x_train, low=-1)
-    x_atk = scale_inputs(x_atk, low=-1)
+    low_bound = -1 if use_mlp else 0
+    x_train = scale_inputs(x_train, low_bound)
+    x_atk = scale_inputs(x_atk, low_bound)
 
     # Reshape the trace input to come in singleton arrays for CNN compatibility
-    # x_train = x_train.reshape((x_train.shape[0], x_train.shape[1], 1))
-    # x_atk = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
+    x_train = x_train.reshape((x_train.shape[0], x_train.shape[1], 1))
+    x_atk = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
 
     # Train the CNN by running it through the GA
-    # nn = load_small_cnn_ascad_no_batch_norm()
-    nn = load_small_mlp_ascad()
+    nn = load_small_cnn_ascad_no_batch_norm()
+    # nn = load_small_mlp_ascad()
 
     pop_size = 50
     atk_set_size = 16
@@ -205,13 +209,30 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
     return avg_keyrank
 
 
-def ensemble_model_sca(nns, n_folds):
+def ensemble_model_sca(ga_results, model_load_func, n_folds, x_atk, y_atk,
+                       true_subkey, ptexts):
     """
-    Evaluates an ensemble of the given neural networks (nns) on the given
-    attack set over several folds. This is accomplished by using the bagging
-    method, i.e. summing the prediction probabilities of each model.
+    Evaluates an ensemble of the top performing neural networks from the given
+    GA results on the given attack set over several folds. This is accomplished
+    by using the bagging method, i.e. summing the prediction probabilities of
+    each model.
     """
-    pass
+    top_indivs = ga_results[2]
+    n_indivs = len(top_indivs)
+
+    nns = np.empty(n_indivs, dtype=object)
+    key_rankss = np.empty(n_indivs, dtype=object)  # [{n_traces, key_rank}]
+    # Extract NNs from GA results & perform SCAs for performance comparison
+    for i in range(n_indivs):
+        nns[i] = model_load_func()
+        nns[i].set_weights(top_indivs[i].weights)
+
+        key_rankss[i] = kfold_ascad_atk_with_varying_size(
+            n_folds, nns[i], atk_data=(x_atk, y_atk, target_subkey, ptexts)
+        )
+
+    # Perform the ensemble SCA
+
 
 
 def small_cnn_sgd_sca(save=True, subkey_idx=2):
@@ -246,13 +267,13 @@ def small_cnn_sgd_sca(save=True, subkey_idx=2):
     x_atk_reshaped = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
 
     # Train CNN
-    cnn = build_small_cnn_ascad()
+    cnn = build_small_cnn_ascad_trainable_conv()
     cnn.compile(optimizer, loss_fn)
     history = cnn.fit(x_train, y_train_converted, batch_size, n_epochs)
 
     # Save the model if desired
     if save:
-        cnn.save('./trained_models/efficient_cnn_ascad_model_17kw.h5')
+        cnn.save('./trained_models/efficient_cnn_ascad_trained_conv.h5')
 
     # Attack with the trained model
     key_rank = exec_sca(cnn, x_atk_reshaped, y_atk, atk_ptexts, target_subkey, subkey_idx=2)
@@ -260,7 +281,7 @@ def small_cnn_sgd_sca(save=True, subkey_idx=2):
     print(f"Key rank obtained with efficient CNN on ASCAD: {key_rank}")
 
 
-def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=False):
+def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=True):
     # Load attack set of 10k ASCAD traces and relevant metadata
     (x_atk, y_atk, target_subkey, atk_ptexts) = \
         load_ascad_atk_variables(for_cnns=True, subkey_idx=2, scale=scale)
@@ -272,7 +293,7 @@ def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=False):
     
     # print(f"Keyrank = {exec_sca(cnn, x_atk, y_atk, atk_ptexts, target_subkey)}")
     kfold_ascad_atk_with_varying_size(
-        30,
+        10,
         cnn,
         subkey_idx=subkey_idx,
         experiment_name="test",
@@ -290,55 +311,12 @@ def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
     # Predict outputs for the full set
     y_pred_probs = nn.predict(x_atk)
 
-    # For each fold, store the key rank for all attack set sizes
-    atk_set_size = len(x_atk)
-    fold_key_ranks = np.zeros((atk_set_size, k), dtype=np.uint8)
-
-    # Reuse subsets of the predictions to simulate attacks over different folds
-    for fold in range(k):
-        print(f"Obtaining key ranks for fold {fold}...")
-        y_pred_probs, atk_ptexts = shuffle_data(y_pred_probs, atk_ptexts)
-
-        # Track the summed log probability of each subkey candidate
-        subkey_logprobs = np.zeros(256)
-
-        # Iterate over each list of 256 probabilities in y_pred_probs.
-        # Each list corresponds to the predictions of 1 trace.
-        for (i, pred_probs) in enumerate(y_pred_probs):
-            pt = atk_ptexts[i][subkey_idx]
-
-            # Convert each label to a subkey and add its logprob to the sum
-            for (label, label_pred_prob) in enumerate(pred_probs):
-                subkey = label_to_subkey(pt, label)
-
-                # Avoid computing np.log(0), which returns -inf
-                logprob = np.log(label_pred_prob) if label_pred_prob > 0 else 0
-                subkey_logprobs[subkey] += logprob
-        
-            # Note that index i stores the key rank obtained after (i + 1) traces
-            fold_key_ranks[i, fold] = keyrank(subkey_logprobs, target_subkey)
-
-    # Build a dictionary that contains the mean key rank for each trace amount
-    mean_key_ranks = np.zeros(atk_set_size, dtype=np.uint8)
-    for i in range(atk_set_size):
-        mean_key_ranks[i] = round(np.mean(fold_key_ranks[i]))
-    with open(f"{experiment_name}_test_set_mean_key_ranks.pickle", "wb") as f:
-        pickle.dump(mean_key_ranks, f)
-
-    # Print key ranks for various attack set sizes
-    atk_set_sizes = range(len(y_atk) + 1, 100)
-    n_atk_set_sizes = len(atk_set_sizes)
-    reached_keyrank_zero = False
-    for (n_traces, rank) in enumerate(mean_key_ranks):
-        # Print milestones
-        if n_traces % 250 == 0:
-            print(f"Mean key rank with {n_traces + 1} attack traces: {rank}")
-        if rank == 0 and not reached_keyrank_zero:
-            print(f"Key rank 0 obtained after {n_traces + 1} traces")
-            reached_keyrank_zero = True
+    mean_ranks = kfold_mean_key_ranks(
+        y_pred_probs, atk_ptexts, target_subkey, k, subkey_idx, experiment_name
+    )
 
     if experiment_name:
-        plot_n_traces_vs_key_rank(mean_key_ranks, experiment_name)
+        plot_n_traces_vs_key_rank(mean_ranks, experiment_name)
 
 
 def compute_memory_requirements(pop_sizes, atk_set_sizes):

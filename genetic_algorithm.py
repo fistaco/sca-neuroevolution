@@ -274,8 +274,8 @@ def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx,
     Returns:
         The key rank obtained with the SCA.
     """
-    # nn = load_small_cnn_ascad_no_batch_norm()
-    nn = load_small_mlp_ascad()
+    nn = load_small_cnn_ascad_no_batch_norm()
+    # nn = load_small_mlp_ascad()
     nn.set_weights(weights)
 
     return compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey, subkey_idx)
