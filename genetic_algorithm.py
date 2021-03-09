@@ -244,12 +244,15 @@ class GeneticAlgorithm:
         generation, and a list of the top 10 individuals, to a pickle file for
         later use.
         """
+        ga_results = None
         with open(f"results/{experiment_name}_ga_results.pickle", "wb") as f:
             top_ten_indices = np.argsort(self.fitnesses)[:10]
             top_ten = self.population[top_ten_indices]
 
             ga_results = (best_indiv, self.best_fitness_per_gen, top_ten)
             pickle.dump(ga_results, f)
+
+        return ga_results
 
     @staticmethod
     def load_results(experiment_name):

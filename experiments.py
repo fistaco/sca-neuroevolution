@@ -7,7 +7,8 @@ import tensorflow as tf
 from tensorflow import keras
 
 from data_processing import (load_ascad_atk_variables, load_ascad_data,
-                             sample_data, scale_inputs, shuffle_data)
+                             sample_data, scale_inputs, shuffle_data,
+                             load_prepared_ascad_vars)
 from genetic_algorithm import GeneticAlgorithm
 from helpers import (compute_mem_req, compute_mem_req_from_known_vals,
                      exec_sca, gen_experiment_name, label_to_subkey,
@@ -43,11 +44,15 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
            mut_power_decay_rate, truncation_proportion, atk_set_size, nn,
            x_valid, y_valid, ptexts_valid, x_test, y_test, ptexts_test,
            true_validation_subkey, true_atk_subkey, subkey_idx, parallelise,
-           apply_fi, select_fun, metric_type, experiment_name="test"):
+           apply_fi, select_fun, metric_type, experiment_name="test",
+           evaluate_on_test_set=True):
     """
     Runs a genetic algorithm with the given parameters and tests the resulting
     best individual on the given test set. The best individual, best fitnesses
     per generation, and results from the final test are saved to pickle files.
+
+    Returns:
+        The result tuple of the GA, which has already been saved to a file.
     """
     ga = GeneticAlgorithm(
         max_gens,
@@ -75,26 +80,27 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
     # best_nn = best_indiv.model
 
     # Save and plot results
-    ga.save_results(best_indiv, experiment_name)
+    ga_results = ga.save_results(best_indiv, experiment_name)
     plot_gens_vs_fitness(experiment_name, ga.best_fitness_per_gen)
 
-    # Create a new model from the best individual's weights and properly
-    # evaluate it on the test set
-    nn.set_weights(best_indiv.weights)
-    kfold_ascad_atk_with_varying_size(
-        30,
-        nn,
-        2,
-        experiment_name,
-        atk_data=(x_test, y_test, true_atk_subkey, ptexts_test)
-    )
+    if evaluate_on_test_set:
+        # Create a new model from the best individual's weights and test it
+        nn.set_weights(best_indiv.weights)
+        kfold_ascad_atk_with_varying_size(
+            30,
+            nn,
+            2,
+            experiment_name,
+            atk_data=(x_test, y_test, true_atk_subkey, ptexts_test)
+        )
 
-    # Evaluate the best network's performance on the test set
-    key_rank = exec_sca(nn, x_test, y_test, ptexts_test, true_atk_subkey)
-    print(f"Key rank on test set with exec_sca: {key_rank}")
+        # Evaluate the best network's performance on the test set
+        key_rank = exec_sca(nn, x_test, y_test, ptexts_test, true_atk_subkey)
+        print(f"Key rank on test set with exec_sca: {key_rank}")
 
     print(f"Key rank on validation set: {best_indiv.fitness}")
-    # print(f"Key rank on test set: {key_rank}")
+    
+    return ga_results
 
 
 def single_ga_experiment(remote_loc=False, use_mlp=False):
@@ -114,7 +120,6 @@ def single_ga_experiment(remote_loc=False, use_mlp=False):
     y_train_converted = keras.utils.to_categorical(y_train, num_classes=256)
 
     # Scale all trace inputs to [low, 1]
-    # TODO: Apply scaling and reshaping based on the NN type, which should be easy to switch
     low_bound = -1 if use_mlp else 0
     x_train = scale_inputs(x_train, low_bound)
     x_atk = scale_inputs(x_atk, low_bound)
@@ -207,6 +212,55 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
         avg_keyrank += key_rank/n_experiments
 
     return avg_keyrank
+
+
+def single_ensemble_experiment():
+    """
+    Runs a single ensemble GA experiment with hard-coded parameters.
+    """
+    (x_train, y_train, train_ptexts, target_train_subkey, x_atk, y_atk, \
+        atk_ptexts, target_atk_subkey) = load_prepared_ascad_vars(
+            subkey_idx=2, scale=True, use_mlp=False, remote_loc=False
+        )
+
+    # Train the CNN by running it through the GA
+    nn = load_small_cnn_ascad_no_batch_norm()
+    # nn = load_small_mlp_ascad()
+
+    pop_size = 50
+    atk_set_size = 16
+    select_fun = "tournament"
+    exp_name = gen_experiment_name(pop_size, atk_set_size, select_fun)
+    ga_results = run_ga(
+        max_gens=100,
+        pop_size=pop_size,
+        mut_power=0.03,
+        mut_rate=0.04,
+        crossover_rate=0.5,
+        mut_power_decay_rate=0.99,
+        truncation_proportion=0.4,
+        atk_set_size=atk_set_size,
+        nn=nn,
+        x_valid=x_train,
+        y_valid=y_train,
+        ptexts_valid=train_ptexts,
+        x_test=x_atk,
+        y_test=y_atk,
+        ptexts_test=atk_ptexts,
+        true_validation_subkey=target_train_subkey,
+        true_atk_subkey=target_atk_subkey,
+        subkey_idx=subkey_idx,
+        parallelise=True,
+        apply_fi=True,
+        select_fun=select_fun,
+        metric_type=MetricType.KEYRANK,
+        experiment_name=exp_name
+    )
+
+    ensemble_model_sca(
+        ga_results, load_small_cnn_ascad_no_batch_norm, 10, x_atk, y_atk,
+        target_atk_subkey, atk_ptexts, experiment_name=f"ensemble_{exp_name}"
+    )
 
 
 def ensemble_model_sca(ga_results, model_load_func, n_folds, x_atk, y_atk,
