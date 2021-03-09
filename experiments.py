@@ -218,9 +218,10 @@ def single_ensemble_experiment():
     """
     Runs a single ensemble GA experiment with hard-coded parameters.
     """
+    subkey_idx = 2
     (x_train, y_train, train_ptexts, target_train_subkey, x_atk, y_atk, \
         atk_ptexts, target_atk_subkey) = load_prepared_ascad_vars(
-            subkey_idx=2, scale=True, use_mlp=False, remote_loc=False
+            subkey_idx=subkey_idx, scale=True, use_mlp=False, remote_loc=False
         )
 
     # Train the CNN by running it through the GA
@@ -254,17 +255,20 @@ def single_ensemble_experiment():
         apply_fi=True,
         select_fun=select_fun,
         metric_type=MetricType.KEYRANK,
-        experiment_name=exp_name
+        experiment_name=exp_name,
+        evaluate_on_test_set=False
     )
 
     ensemble_model_sca(
         ga_results, load_small_cnn_ascad_no_batch_norm, 10, x_atk, y_atk,
-        target_atk_subkey, atk_ptexts, experiment_name=f"ensemble_{exp_name}"
+        target_atk_subkey, atk_ptexts, subkey_idx=subkey_idx,
+        experiment_name=f"ensemble_{exp_name}"
     )
 
 
 def ensemble_model_sca(ga_results, model_load_func, n_folds, x_atk, y_atk,
-                       true_subkey, ptexts, experiment_name="ensemble_test"):
+                       true_subkey, ptexts, subkey_idx=2,
+                       experiment_name="ensemble_test"):
     """
     Evaluates an ensemble of the top performing neural networks from the given
     GA results on the given attack set over several folds. This is accomplished
@@ -282,7 +286,7 @@ def ensemble_model_sca(ga_results, model_load_func, n_folds, x_atk, y_atk,
         nns[i].set_weights(top_indivs[i].weights)
 
         key_rankss[i] = kfold_ascad_atk_with_varying_size(
-            n_folds, nns[i], atk_data=(x_atk, y_atk, target_subkey, ptexts)
+            n_folds, nns[i], atk_data=(x_atk, y_atk, true_subkey, ptexts)
         )
 
     # Perform the ensemble SCA
@@ -381,6 +385,8 @@ def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
 
     if experiment_name:
         plot_n_traces_vs_key_rank(experiment_name, mean_ranks)
+    
+    return mean_ranks
 
 
 def compute_memory_requirements(pop_sizes, atk_set_sizes):
