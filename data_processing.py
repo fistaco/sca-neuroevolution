@@ -1,6 +1,7 @@
 import h5py
 import numpy as np
 
+from keras.utils import to_categorical
 from sklearn import preprocessing
 
 
@@ -66,6 +67,40 @@ def load_ascad_atk_variables(subkey_idx=2, for_cnns=True, scale=False):
         x_atk = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
 
     return (x_atk, y_atk, target_atk_subkey, atk_ptexts)
+
+
+def load_prepared_ascad_vars(subkey_idx=2, scale=True, use_mlp=False,
+                             remote_loc=False):
+    """
+    Loads the ASCAD training and attack traces along with the metadata, applies
+    reshaping for CNNs, scales the traces, and returns all relevant variables
+    for instant use.
+    """
+    (x_train, y_train, x_atk, y_atk, train_meta, atk_meta) = \
+        load_ascad_data(load_metadata=True, remote_loc=remote_loc)
+    original_input_shape = (700, 1)
+    x_train, y_train = x_train[:45000], y_train[:45000]
+
+    # Declare easily accessible variables for relevant metadata
+    target_train_subkey = train_meta['key'][0][subkey_idx]
+    train_ptexts = train_meta['plaintext']
+    target_atk_subkey = atk_meta['key'][0][subkey_idx]
+    atk_ptexts = atk_meta['plaintext']
+
+    # Convert labels to one-hot encoding probabilities
+    y_train_converted = to_categorical(y_train, num_classes=256)
+
+    # Scale all trace inputs to [low, 1]
+    low_bound = -1 if use_mlp else 0
+    x_train = scale_inputs(x_train, low_bound)
+    x_atk = scale_inputs(x_atk, low_bound)
+
+    # Reshape the trace input to come in singleton arrays for CNN compatibility
+    x_train = x_train.reshape((x_train.shape[0], x_train.shape[1], 1))
+    x_atk = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
+
+    return (x_train, y_train, train_ptexts, target_train_subkey, x_atk, \
+        y_atk, atk_ptexts, target_atk_subkey)
 
 
 def reshape_input_for_cnns(input_data):
