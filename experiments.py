@@ -76,7 +76,7 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
 
     # Save and plot results
     ga.save_results(best_indiv, experiment_name)
-    plot_gens_vs_fitness(ga.best_fitness_per_gen, experiment_name)
+    plot_gens_vs_fitness(experiment_name, ga.best_fitness_per_gen)
 
     # Create a new model from the best individual's weights and properly
     # evaluate it on the test set
@@ -210,18 +210,18 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
 
 
 def ensemble_model_sca(ga_results, model_load_func, n_folds, x_atk, y_atk,
-                       true_subkey, ptexts):
+                       true_subkey, ptexts, experiment_name="ensemble_test"):
     """
     Evaluates an ensemble of the top performing neural networks from the given
     GA results on the given attack set over several folds. This is accomplished
     by using the bagging method, i.e. summing the prediction probabilities of
     each model.
     """
-    top_indivs = ga_results[2]
+    top_indivs = ga_results[2]  # Sorted from best to worst fitness
     n_indivs = len(top_indivs)
 
     nns = np.empty(n_indivs, dtype=object)
-    key_rankss = np.empty(n_indivs, dtype=object)  # [{n_traces, key_rank}]
+    key_rankss = np.empty(n_indivs + 1, dtype=object)  # [[mean_key_rank]]
     # Extract NNs from GA results & perform SCAs for performance comparison
     for i in range(n_indivs):
         nns[i] = model_load_func()
@@ -232,7 +232,17 @@ def ensemble_model_sca(ga_results, model_load_func, n_folds, x_atk, y_atk,
         )
 
     # Perform the ensemble SCA
+    bagged_pred_probs = sum([nn.predict(x_atk) for nn in nns])
+    ensemble_key_ranks = kfold_mean_key_ranks(
+        bagged_pred_probs, ptexts, true_subkey, n_folds, subkey_idx, experiment_name
+    )
+    key_rankss[-1] = ensemble_key_ranks
 
+    # Plot all lines in the same figure
+    labels = [f"Top-{i + 1}" for i in range(10)] + ["Ensemble"]
+    plot_n_traces_vs_key_rank(experiment_name, *key_rankss, labels=labels)
+
+    print(f"Mean key rank with ensemble method: {ensemble_key_ranks[-1]}")
 
 
 def small_cnn_sgd_sca(save=True, subkey_idx=2):
@@ -316,7 +326,7 @@ def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
     )
 
     if experiment_name:
-        plot_n_traces_vs_key_rank(mean_ranks, experiment_name)
+        plot_n_traces_vs_key_rank(experiment_name, mean_ranks)
 
 
 def compute_memory_requirements(pop_sizes, atk_set_sizes):

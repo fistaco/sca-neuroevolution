@@ -63,7 +63,7 @@ def kfold_mean_key_ranks(y_pred_probs, atk_ptexts, true_subkey, k,
             # Note that index i stores the key rank obtained after (i+1) traces
             fold_key_ranks[i, fold] = keyrank(subkey_logprobs, true_subkey)
 
-    # Build a dictionary that contains the mean key rank for each trace amount
+    # Build an array that contains the mean key rank for each trace amount
     mean_key_ranks = np.zeros(atk_set_size, dtype=np.uint8)
     for i in range(atk_set_size):
         mean_key_ranks[i] = round(np.mean(fold_key_ranks[i]))
