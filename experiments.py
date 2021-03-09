@@ -11,8 +11,8 @@ from data_processing import (load_ascad_atk_variables, load_ascad_data,
                              load_prepared_ascad_vars)
 from genetic_algorithm import GeneticAlgorithm
 from helpers import (compute_mem_req, compute_mem_req_from_known_vals,
-                     exec_sca, gen_experiment_name, label_to_subkey,
-                     kfold_mean_key_ranks)
+                     exec_sca, gen_experiment_name, gen_extended_exp_name,
+                     label_to_subkey, kfold_mean_key_ranks)
 from metrics import MetricType, keyrank
 from models import (build_small_cnn_ascad, load_nn_from_experiment_results,
                     load_small_cnn_ascad, load_small_cnn_ascad_no_batch_norm,
@@ -21,23 +21,101 @@ from plotting import plot_gens_vs_fitness, plot_n_traces_vs_key_rank
 
 
 def ga_grid_search():
-    pop_sizes = np.arange(25, 251, 75)  # 4 values
-    mut_pows = np.arange(0.01, 0.08, 0.02)  # 4 values
-    mut_rates = np.arange(0.01, 0.11, 0.03)  # 4 values
-    mut_pow_dec_rates = np.array([0.99, 0.999, 1.0]) # 3 values
-    fi_dec_rates = np.arange(0.0, 0.5, 0.2) # 3 values
-    atk_set_sizes = np.array([8, 16, 64, 256])  # 4 values
-    selection_methods = np.array(["roulette_wheel", "tournament"])  # 2 values
+    # pop_sizes = np.arange(25, 251, 75)  # 4 values
+    pop_sizes = [25, 50, 75]  # 3 values
+    mut_pows = [0.01, 0.03, 0.05, 0.07]  # 4 values
+    mut_rates = [0.01, 0.04, 0.07, 0.0]  # 4 values
+    mut_pow_dec_rates = [0.99, 0.999, 1.0]  # 3 values
+    fi_dec_rates = [0.0, 0.2, 0.4]  # 3 values
+    atk_set_sizes = [4, 16, 64, 256]  # 4 values
+    selection_methods = ["tournament"]  # 1 value
+    metrics = [MetricType.KEYRANK, MetricType.KEYRANK_AND_ACCURACY]
     # TODO: test different weight init versions
     # TODO: Only test small atk set sizes with fitness inheritance enabled
 
-    # Mutation power decay rate is assumed to be near optimal
-    # Total runs without selection method variation = 320
-    for pop_size in pop_sizes:
-        for mut_pow in mut_pows:
-            for mut_rate in mut_rates:
-                for atk_set_size in atk_set_sizes:
-                    pass
+    # Set up variables for progress tracking
+    n_experiments = len(pop_sizes)*len(mut_pows)*len(mut_rates)* \
+        len(mut_pow_dec_rates)*len(fi_dec_rates)*len(atk_set_sizes)* \
+        len(selection_methods)
+    current_exp_idx = 1
+
+    # Load data
+    subkey_idx = 2
+    (x_train, y_train, train_ptexts, target_train_subkey, x_atk, y_atk, \
+        atk_ptexts, target_atk_subkey) = load_prepared_ascad_vars(
+            subkey_idx=subkey_idx, scale=True, use_mlp=False, remote_loc=False
+        )
+    nn = load_small_cnn_ascad_no_batch_norm()
+
+    # TODO: Keep track of data frame with key ranks for all parameter combos
+
+    def run_exp(ps, mp, mr, mpdr, fdr, ass, sf, mt):
+        print(f"Starting experiment {i}/{n_experiments}...")
+        current_exp_idx += 1
+
+        exp_name = \
+            gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, "cnn")
+
+        avg_key_rank = averaged_ga_experiment(
+            max_gens=100,
+            pop_size=ps,
+            mut_power=mp,
+            mut_rate=mr,
+            crossover_rate=0.5,
+            mut_power_decay_rate=mpdr,
+            truncation_proportion=0.4,
+            atk_set_size=ass,
+            nn=nn,
+            x_valid=x_train,
+            y_valid=y_train,
+            ptexts_valid=train_ptexts,
+            x_test=x_atk,
+            y_test=y_atk,
+            ptexts_test=atk_ptexts,
+            true_validation_subkey=target_train_subkey,
+            true_atk_subkey=target_atk_subkey,
+            parallelise=True,
+            apply_fi=True,
+            select_fun=sf,
+            metric_type=mt,
+            n_experiments=10,
+            experiment_name=exp_name
+        )
+
+        return (avg_key_rank, exp_name)
+
+    # Track best key rank and the corresponding experiment name
+    best_key_rank = 255
+    best_exp_name = "experiment_name_placeholder"
+
+    for ps in pop_sizes:
+        for mp in mut_pows:
+            for mr in mut_rates:
+                for mpdr in mut_pow_dec_rates:
+                    for fdr in fi_dec_rates:
+                        for ass in atk_set_sizes:
+                            for sf in selection_methods:
+                                for mt in metrics:
+                                    (key_rank, exp_name) = run_exp(
+                                        ps, mp, mr, mpdr, fdr, ass, sf, mt
+                                    )
+
+                                    if key_rank < best_key_rank:
+                                        best_key_rank = key_rank
+                                        best_exp_name = exp_name
+
+                                        print(f"New best key rank: {key_rank}")
+                                        print(f"Achieved with: {exp_name}")
+
+    # Validate the best network on the attack set over 100 folds
+    nn = load_nn_from_experiment_results(best_exp_name)  # TODO: Test this method before running the full grid 
+    kfold_ascad_atk_with_varying_size(
+            100,
+            nn,
+            subkey_idx=2,
+            experiment_name=best_exp_name + "-final100folds",
+            atk_data=(x_atk, y_atk, target_atk_subkey, atk_ptexts)
+        )
 
 
 def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
@@ -157,7 +235,7 @@ def single_ga_experiment(remote_loc=False, use_mlp=False):
         parallelise=True,
         apply_fi=True,
         select_fun=select_fun,
-        metric_type=MetricType.KEYRANK,
+        metric_type=MetricType.KEYRANK_AND_ACCURACY,
         experiment_name=gen_experiment_name(pop_size, atk_set_size, select_fun)
     )
 
@@ -216,7 +294,7 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
 
 def single_ensemble_experiment():
     """
-    Runs a single ensemble GA experiment with hard-coded parameters.
+    Runs a single ensemble GA experiment with hard coded parameters.
     """
     subkey_idx = 2
     (x_train, y_train, train_ptexts, target_train_subkey, x_atk, y_atk, \
@@ -254,7 +332,7 @@ def single_ensemble_experiment():
         parallelise=True,
         apply_fi=True,
         select_fun=select_fun,
-        metric_type=MetricType.KEYRANK,
+        metric_type=MetricType.KEYRANK_AND_ACCURACY,
         experiment_name=exp_name,
         evaluate_on_test_set=False
     )
@@ -279,14 +357,17 @@ def ensemble_model_sca(ga_results, model_load_func, n_folds, x_atk, y_atk,
     n_indivs = len(top_indivs)
 
     nns = np.empty(n_indivs, dtype=object)
-    key_rankss = np.empty(n_indivs + 1, dtype=object)  # [[mean_key_rank]]
-    # Extract NNs from GA results & perform SCAs for performance comparison
+    # Extract NNs from GA results
     for i in range(n_indivs):
         nns[i] = model_load_func()
         nns[i].set_weights(top_indivs[i].weights)
 
+    # Perform SCAs for comparison for the 1st, 3rd, and 5th best NNs
+    nn_indices = [0, 2, 4]
+    key_rankss = np.empty(len(nn_indices) + 1, dtype=object)  # [[key_rank]]
+    for (i, nn_idx) in enumerate(nn_indices):
         key_rankss[i] = kfold_ascad_atk_with_varying_size(
-            n_folds, nns[i], atk_data=(x_atk, y_atk, true_subkey, ptexts)
+            n_folds, nns[nn_idx], atk_data=(x_atk, y_atk, true_subkey, ptexts)
         )
 
     # Perform the ensemble SCA
@@ -297,7 +378,7 @@ def ensemble_model_sca(ga_results, model_load_func, n_folds, x_atk, y_atk,
     key_rankss[-1] = ensemble_key_ranks
 
     # Plot all lines in the same figure
-    labels = [f"Top-{i + 1}" for i in range(10)] + ["Ensemble"]
+    labels = [f"Top-{i + 1}" for i in nn_indices] + ["Ensemble"]
     plot_n_traces_vs_key_rank(experiment_name, *key_rankss, labels=labels)
 
     print(f"Mean key rank with ensemble method: {ensemble_key_ranks[-1]}")

@@ -210,11 +210,11 @@ def load_model_weights_from_ga_results(experiment_name):
     Loads and returns the weights of the best individual constructed during the
     GA experiment with the given experiment name.
     """
-    path = f"{experiment_name}_ga_results.pickle"
+    path = f"results/{experiment_name}_ga_results.pickle"
     nn_weights = None
     with open(path, "rb") as f:
         ga_results = pickle.load(f)
-        nn_weights = ga_results[0]
+        nn_weights = ga_results[0].weights
     
     return nn_weights
 
@@ -226,9 +226,34 @@ def gen_experiment_name(pop_size, atk_set_size, select_fun):
     return f"ps{pop_size}-ass{atk_set_size}-{select_fun[0]}select"
 
 
-def calc_max_fitness(metric_type, apply_fi=False, fi_decay=0.2):
+def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, nn):
+    """
+    Generates an experiment name for a GA run using the given arguments.
+
+    Arguments:
+        ps: Population size.
+        mp: Mutation power.
+        mr: Mutation rate.
+        mpdr: Mutation power decay rate.
+        fdr: Fitness inheritance decay rate.
+        ass: Attack set size.
+        sf: Selection function.
+        mt: Metric type.
+        nn: Neural network model name.
+    """
+    return f"ps{ps}-mp{mp}-mr{mr}-mpdr{mpdr}-fdr{fdr}-ass{ass}-sf{sf[0]}-mt{mt}-{nn}"
+
+
+def calc_max_fitness(metric_type):
     """
     Returns the maximum fitness based on the given metric type.
     """
     return 100 if metric_type == MetricType.ACCURACY else 255
+
+
+def calc_min_fitness(metric_type):
+    """
+    Returns the maximum fitness based on the given metric type.
+    """
+    return -1 if metric_type == MetricType.KEYRANK_AND_ACCURACY else 0
 

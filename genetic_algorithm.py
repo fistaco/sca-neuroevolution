@@ -9,7 +9,8 @@ import numpy as np
 import tensorflow as tf
 
 from data_processing import sample_data
-from helpers import exec_sca, compute_fitness, calc_max_fitness
+from helpers import (exec_sca, compute_fitness, calc_max_fitness,
+                     calc_min_fitness)
 from metrics import MetricType
 from models import (build_small_cnn_ascad, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad)
@@ -42,6 +43,7 @@ class GeneticAlgorithm:
         self.max_fitness = max_base_f = calc_max_fitness(metric_type)
         max_unscaled_adj_fitness = adjust_fitness(max_base_f, max_base_f, 0.2)
         self.fitness_scaling = (1/max_unscaled_adj_fitness) * max_base_f
+        self.min_fitness = calc_min_fitness(metric_type)
 
         # Store fitness-related information in arrays of the appropriate dtype
         dtype = np.uint8 if metric_type == MetricType.KEYRANK else np.float64
@@ -78,7 +80,7 @@ class GeneticAlgorithm:
         best_fitness = 256
         best_individual = None
 
-        while gen < self.max_gens and best_fitness > 0:
+        while gen < self.max_gens and best_fitness > self.min_fitness:
             # Randomly sample the attack set
             (x_atk, y_atk) = \
                 sample_data(self.atk_set_size, x_atk_full, y_atk_full)
@@ -162,8 +164,13 @@ class GeneticAlgorithm:
             # )
             f, fp = indiv.fitness, indiv.avg_parent_fitness
 
-            indiv.fitness = self.fitnesses[i] = \
-                adjust_fitness(f, fp, fi_decay, self.fitness_scaling)
+            fitness = adjust_fitness(f, fp, fi_decay, self.fitness_scaling)
+
+            # Avoid rounding to 0 for (0.5 < f < 1.0) during integer conversion
+            if self.metric_type == MetricType.KEYRANK:
+                fitness = round(fitness)
+
+            indiv.fitness = self.fitnesses[i] = fitness
 
     def roulette_wheel_selection(self):
         """
