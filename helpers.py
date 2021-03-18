@@ -271,6 +271,7 @@ def gen_ga_grid_search_arg_lists():
     fi_dec_rates = [0.0, 0.2, 0.4]  # 3 values
     atk_set_sizes = [16, 64, 256]  # 3 values
     selection_methods = ["tournament", "roulette_wheel"]  # 2 values
+    metrics = [MetricType.KEYRANK_AND_ACCURACY]  # 1 value
 
     argss = [
         tup for tup in zip(
