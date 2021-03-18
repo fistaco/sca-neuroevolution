@@ -241,7 +241,7 @@ def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, nn):
         mt: Metric type.
         nn: Neural network model name.
     """
-    return f"ps{ps}-mp{mp}-mr{mr}-mpdr{mpdr}-fdr{fdr}-ass{ass}-sf{sf[0]}-mt{mt}-{nn}"
+    return f"ps{ps}-mp{mp}-mr{mr}-mpdr{mpdr}-fdr{fdr}-ass{ass}-sf_{sf[0]}-mt_{mt.id()}-{nn}"
 
 
 def calc_max_fitness(metric_type):
@@ -257,3 +257,26 @@ def calc_min_fitness(metric_type):
     """
     return -1 if metric_type == MetricType.KEYRANK_AND_ACCURACY else 0
 
+
+def gen_ga_grid_search_arg_lists():
+    """
+    Returns a list of lists, where each inner list contains arguments for a
+    single grid search run for the weight evolution GA experiments.
+    """
+    # Total amount of experiments: 1458
+    pop_sizes = [25, 50, 75]  # 3 values
+    mut_pows = [0.01, 0.03, 0.05]  # 3 values
+    mut_rates = [0.01, 0.04, 0.07]  # 3 values
+    mut_pow_dec_rates = [0.99, 0.999, 1.0]  # 3 values
+    fi_dec_rates = [0.0, 0.2, 0.4]  # 3 values
+    atk_set_sizes = [16, 64, 256]  # 3 values
+    selection_methods = ["tournament", "roulette_wheel"]  # 2 values
+
+    argss = [
+        tup for tup in zip(
+            pop_sizes, mut_pows, mut_rates, mut_pow_dec_rates,
+            fi_dec_rates, atk_set_sizes, selection_methods, metrics
+        )
+    ]
+
+    return argss
