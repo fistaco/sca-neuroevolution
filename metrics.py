@@ -33,3 +33,10 @@ class MetricType(Enum):
     KEYRANK = 0
     ACCURACY = 1
     KEYRANK_AND_ACCURACY = 2
+
+    def id(self):
+        substrs = self.name.split("_")
+        if len(substrs) == 1:
+            return self.name[:3]
+        else:
+            return f"{substrs[0][:2] + substrs[-1][:2]}"
