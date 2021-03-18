@@ -169,3 +169,6 @@ def load_nn_from_experiment_results(experiment_name, load_model_function):
     nn.set_weights(weights)
 
     return nn
+
+
+NN_LOAD_FUNC = load_small_mlp_ascad
