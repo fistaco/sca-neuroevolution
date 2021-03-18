@@ -12,26 +12,25 @@ from data_processing import (load_ascad_atk_variables, load_ascad_data,
 from genetic_algorithm import GeneticAlgorithm
 from helpers import (compute_mem_req, compute_mem_req_from_known_vals,
                      exec_sca, gen_experiment_name, gen_extended_exp_name,
-                     label_to_subkey, kfold_mean_key_ranks)
+                     label_to_subkey, kfold_mean_key_ranks,
+                     gen_ga_grid_search_arg_lists)
 from metrics import MetricType, keyrank
 from models import (build_small_cnn_ascad, load_nn_from_experiment_results,
                     load_small_cnn_ascad, load_small_cnn_ascad_no_batch_norm,
-                    load_small_mlp_ascad, build_small_cnn_ascad_trainable_conv)
+                    load_small_mlp_ascad, build_small_cnn_ascad_trainable_conv,
+                    NN_LOAD_FUNC)
 from plotting import plot_gens_vs_fitness, plot_n_traces_vs_key_rank
 
 
 def ga_grid_search():
-    # pop_sizes = np.arange(25, 251, 75)  # 4 values
     pop_sizes = [25, 50, 75]  # 3 values
-    mut_pows = [0.01, 0.03, 0.05, 0.07]  # 4 values
-    mut_rates = [0.01, 0.04, 0.07, 0.0]  # 4 values
+    mut_pows = [0.01, 0.03, 0.05]  # 3 values
+    mut_rates = [0.01, 0.04, 0.07]  # 3 values
     mut_pow_dec_rates = [0.99, 0.999, 1.0]  # 3 values
     fi_dec_rates = [0.0, 0.2, 0.4]  # 3 values
-    atk_set_sizes = [4, 16, 64, 256]  # 4 values
-    selection_methods = ["tournament"]  # 1 value
-    metrics = [MetricType.KEYRANK, MetricType.KEYRANK_AND_ACCURACY]
+    atk_set_sizes = [16, 64, 112]  # 3 values
+    selection_methods = ["tournament", "roulette_wheel"]  # 2 values
     # TODO: test different weight init versions
-    # TODO: Only test small atk set sizes with fitness inheritance enabled
 
     # Set up variables for progress tracking
     n_experiments = len(pop_sizes)*len(mut_pows)*len(mut_rates)* \
@@ -45,7 +44,7 @@ def ga_grid_search():
         atk_ptexts, target_atk_subkey) = load_prepared_ascad_vars(
             subkey_idx=subkey_idx, scale=True, use_mlp=False, remote_loc=False
         )
-    nn = load_small_cnn_ascad_no_batch_norm()
+    nn = NN_LOAD_FUNC()
 
     # TODO: Keep track of data frame with key ranks for all parameter combos
 
@@ -108,7 +107,7 @@ def ga_grid_search():
                                         print(f"Achieved with: {exp_name}")
 
     # Validate the best network on the attack set over 100 folds
-    nn = load_nn_from_experiment_results(best_exp_name)  # TODO: Test this method before running the full grid 
+    nn = load_nn_from_experiment_results(best_exp_name)
     kfold_ascad_atk_with_varying_size(
             100,
             nn,
@@ -116,6 +115,63 @@ def ga_grid_search():
             experiment_name=best_exp_name + "-final100folds",
             atk_data=(x_atk, y_atk, target_atk_subkey, atk_ptexts)
         )
+
+
+def single_weight_evo_grid_search_experiment(exp_idx):
+    """
+    Executes an averaged GA experiment over 10 runs, where the arguments of the
+    GA are determined by the given index for the generated list of GA
+    argument tuples.
+    """
+    print(f"Starting experiment {exp_idx}/1458...")
+
+    # Load data
+    subkey_idx = 2
+    (x_train, y_train, train_ptexts, target_train_subkey, x_atk, y_atk, \
+        atk_ptexts, target_atk_subkey) = load_prepared_ascad_vars(
+            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=False
+        )
+    nn = NN_LOAD_FUNC()
+
+    # Generate arguments based on the given experiment index
+    (ps, mp, mr, mpdr, fdr, ass, sf, mt) = gen_ga_grid_search_arg_lists()[exp_idx]
+    exp_name = gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, "mlp")
+
+    # averaged_ga_experiment should save any relevant results to a file
+    averaged_ga_experiment(
+        max_gens=50,
+        pop_size=ps,
+        mut_power=mp,
+        mut_rate=mr,
+        crossover_rate=0.5,
+        mut_power_decay_rate=mpdr,
+        truncation_proportion=0.4,
+        atk_set_size=ass,
+        nn=nn,
+        x_valid=x_train,
+        y_valid=y_train,
+        ptexts_valid=train_ptexts,
+        x_test=x_atk,
+        y_test=y_atk,
+        ptexts_test=atk_ptexts,
+        true_validation_subkey=target_train_subkey,
+        true_atk_subkey=target_atk_subkey,
+        parallelise=False,
+        apply_fi=True,
+        select_fun=sf,
+        metric_type=mt,
+        n_experiments=10,
+        experiment_name=exp_name,
+        save_results=True
+    )
+
+
+def ga_grid_search_results_eval():
+    # Evaluate the best network
+    df = None
+
+    # Plot the influence of each parameter
+    pass
 
 
 def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
@@ -207,7 +263,7 @@ def single_ga_experiment(remote_loc=False, use_mlp=False):
     x_atk = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
 
     # Train the CNN by running it through the GA
-    nn = load_small_cnn_ascad_no_batch_norm()
+    nn = NN_LOAD_FUNC()
     # nn = load_small_mlp_ascad()
 
     pop_size = 50
@@ -245,7 +301,7 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
            atk_set_size, nn, x_valid, y_valid, ptexts_valid, x_test, y_test,
            ptexts_test, true_validation_subkey, true_atk_subkey, parallelise,
            apply_fi, select_fun, metric_type, n_experiments=10,
-           experiment_name="test"):
+           experiment_name="test", save_results=False):
     """
     Runs a given amount of GA experiments with the given parameters and returns
     the average key rank obtained with the full given attack set.
@@ -254,12 +310,13 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
     experiment.
     """
     # Create results directory if necessary
-    dir_path = f"results/{experiment_name}/"
+    dir_path = f"results/{experiment_name}"
     if not os.path.exists(dir_path):
         os.mkdir(dir_path)
 
     avg_keyrank = 0
     for i in range(n_experiments):
+        print(f"Starting experiment {experiment_name} run {i}.")
         ga = GeneticAlgorithm(
             max_gens,
             pop_size,
@@ -278,14 +335,17 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
         best_indiv = \
             ga.run(nn, x_valid, y_valid, ptexts_valid, true_validation_subkey)
 
-        # Save and plot results # TODO: save results in a directory allocated to this experiment
-        ga.save_results(best_indiv, f"{experiment_name}/run-{i}")
-        # plot_gens_vs_fitness(ga.best_fitness_per_gen, experiment_name)  # TODO: plot each experiment in the same graph
 
         # Create a new model from the best individual's weights and evaluate it
-        cnn = load_small_cnn_ascad_no_batch_norm()
+        cnn = NN_LOAD_FUNC()
         cnn.set_weights(best_indiv.weights)
         key_rank = exec_sca(cnn, x_test, y_test, ptexts_test, true_atk_subkey)
+
+        if save_results:
+            (_, best_fitness_per_gen, top_ten) = ga.get_results()
+            results = (best_indiv, best_fitness_per_gen, top_ten, key_rank)
+            with open(f"{dir_path}/run{i}_results.pickle", "wb") as f:
+                pickle.dump(results, f)
 
         avg_keyrank += key_rank/n_experiments
 
@@ -303,15 +363,15 @@ def single_ensemble_experiment():
         )
 
     # Train the CNN by running it through the GA
-    nn = load_small_cnn_ascad_no_batch_norm()
-    # nn = load_small_mlp_ascad()
+    model_load_func = load_small_mlp_ascad
+    nn = model_load_func()
 
     pop_size = 50
     atk_set_size = 16
     select_fun = "tournament"
     exp_name = gen_experiment_name(pop_size, atk_set_size, select_fun)
     ga_results = run_ga(
-        max_gens=100,
+        max_gens=50,
         pop_size=pop_size,
         mut_power=0.03,
         mut_rate=0.04,
@@ -338,7 +398,7 @@ def single_ensemble_experiment():
     )
 
     ensemble_model_sca(
-        ga_results, load_small_cnn_ascad_no_batch_norm, 10, x_atk, y_atk,
+        ga_results, model_load_func, 10, x_atk, y_atk,
         target_atk_subkey, atk_ptexts, subkey_idx=subkey_idx,
         experiment_name=f"ensemble_{exp_name}"
     )
@@ -384,7 +444,7 @@ def ensemble_model_sca(ga_results, model_load_func, n_folds, x_atk, y_atk,
     print(f"Mean key rank with ensemble method: {ensemble_key_ranks[-1]}")
 
 
-def small_cnn_sgd_sca(save=True, subkey_idx=2):
+def small_cnn_sgd_sca(save=False, subkey_idx=2):
     # Load the ASCAD data set with 700 points per trace
     PATH = "./../ASCAD_data/ASCAD_databases/ASCAD.h5"
     (x, y, x_atk, y_atk, train_meta, atk_meta) = \
@@ -416,16 +476,16 @@ def small_cnn_sgd_sca(save=True, subkey_idx=2):
     x_atk_reshaped = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
 
     # Train CNN
-    cnn = build_small_cnn_ascad_trainable_conv()
+    cnn = build_small_cnn_ascad()
     cnn.compile(optimizer, loss_fn)
     history = cnn.fit(x_train, y_train_converted, batch_size, n_epochs)
 
     # Save the model if desired
     if save:
-        cnn.save('./trained_models/efficient_cnn_ascad_trained_conv.h5')
+        cnn.save('./trained_models/efficient_cnn_ascad.h5')
 
     # Attack with the trained model
-    key_rank = exec_sca(cnn, x_atk_reshaped, y_atk, atk_ptexts, target_subkey, subkey_idx=2)
+    key_rank = exec_sca(cnn, x_atk_reshaped, y_atk, atk_ptexts, target_subkey, subkey_idx)
 
     print(f"Key rank obtained with efficient CNN on ASCAD: {key_rank}")
 
