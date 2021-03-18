@@ -1,3 +1,4 @@
+import itertools
 import pickle
 
 import numpy as np
@@ -268,13 +269,13 @@ def gen_ga_grid_search_arg_lists():
     mut_pows = [0.01, 0.03, 0.05]  # 3 values
     mut_rates = [0.01, 0.04, 0.07]  # 3 values
     mut_pow_dec_rates = [0.99, 0.999, 1.0]  # 3 values
-    fi_dec_rates = [0.0, 0.2, 0.4]  # 3 values
+    fi_dec_rates = [0.0]  # 1 value
     atk_set_sizes = [16, 64, 256]  # 3 values
     selection_methods = ["tournament", "roulette_wheel"]  # 2 values
     metrics = [MetricType.KEYRANK_AND_ACCURACY]  # 1 value
 
     argss = [
-        tup for tup in zip(
+        tup for tup in itertools.product(
             pop_sizes, mut_pows, mut_rates, mut_pow_dec_rates,
             fi_dec_rates, atk_set_sizes, selection_methods, metrics
         )
