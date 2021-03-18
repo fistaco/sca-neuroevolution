@@ -13,7 +13,8 @@ from helpers import (exec_sca, compute_fitness, calc_max_fitness,
                      calc_min_fitness)
 from metrics import MetricType
 from models import (build_small_cnn_ascad, load_small_cnn_ascad,
-                    load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad)
+                    load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
+                    NN_LOAD_FUNC)
 from nn_genome import NeuralNetworkGenome
 
 
@@ -244,7 +245,18 @@ class GeneticAlgorithm:
                 offspring[i] = parent0.mutate(self.mut_power, self.mut_rate, self.apply_fi)
         
         return offspring
-    
+
+    def get_results(self):
+        """
+        Returns the results, i.e. the best individual, the best fitnesses per
+        generation, and a list of the top 10 individuals without saving them.
+        """
+        top_ten_indices = np.argsort(self.fitnesses)[:10]
+        top_ten = self.population[top_ten_indices]
+        best_indiv = top_ten[0]
+
+        return (best_indiv, self.best_fitness_per_gen, top_ten)
+
     def save_results(self, best_indiv, experiment_name):
         """
         Saves the results, i.e. the best individual, the best fitnesses per
@@ -284,8 +296,7 @@ def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx,
     Returns:
         The key rank obtained with the SCA.
     """
-    nn = load_small_cnn_ascad_no_batch_norm()
-    # nn = load_small_mlp_ascad()
+    nn = NN_LOAD_FUNC()
     nn.set_weights(weights)
 
     return compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey, subkey_idx)
