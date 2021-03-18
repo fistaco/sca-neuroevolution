@@ -15,9 +15,9 @@ def plot_gens_vs_fitness(experiment_name, fitnesses_per_gen):
     """
     plt.title(f"Generations ~ fitness ({experiment_name})")
     plt.xlabel("Generations")
-    plt.ylabel("Fitness (key rank)")
+    plt.ylabel("Fitness")
     plt.plot(np.arange(len(fitnesses_per_gen)), fitnesses_per_gen)
-    plt.ylim(0, 180)
+    plt.ylim(-1, 180)
     plt.grid(True)
     plt.savefig(f"./fig/{experiment_name}_gens_vs_fitness.png")
     plt.clf()
