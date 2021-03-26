@@ -7,18 +7,18 @@ import tensorflow as tf
 from tensorflow import keras
 
 from data_processing import (load_ascad_atk_variables, load_ascad_data,
-                             sample_data, scale_inputs, shuffle_data,
-                             load_prepared_ascad_vars)
+                             load_prepared_ascad_vars, sample_data,
+                             scale_inputs, shuffle_data)
 from genetic_algorithm import GeneticAlgorithm
 from helpers import (compute_mem_req, compute_mem_req_from_known_vals,
                      exec_sca, gen_experiment_name, gen_extended_exp_name,
-                     label_to_subkey, kfold_mean_key_ranks,
-                     gen_ga_grid_search_arg_lists)
+                     gen_ga_grid_search_arg_lists, kfold_mean_key_ranks,
+                     label_to_subkey)
 from metrics import MetricType, keyrank
-from models import (build_small_cnn_ascad, load_nn_from_experiment_results,
-                    load_small_cnn_ascad, load_small_cnn_ascad_no_batch_norm,
-                    load_small_mlp_ascad, build_small_cnn_ascad_trainable_conv,
-                    NN_LOAD_FUNC)
+from models import (NN_LOAD_FUNC, build_small_cnn_ascad,
+                    build_small_cnn_ascad_trainable_conv,
+                    load_nn_from_experiment_results, load_small_cnn_ascad,
+                    load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad)
 from plotting import plot_gens_vs_fitness, plot_n_traces_vs_key_rank
 
 
@@ -117,13 +117,13 @@ def ga_grid_search():
         )
 
 
-def single_weight_evo_grid_search_experiment(exp_idx):
+def single_weight_evo_grid_search_experiment(exp_idx, run_idx):
     """
     Executes an averaged GA experiment over 10 runs, where the arguments of the
     GA are determined by the given index for the generated list of GA
     argument tuples.
     """
-    print(f"Starting experiment {exp_idx}/1458...")
+    print(f"Starting experiment {exp_idx}/485...")
 
     # Load data
     subkey_idx = 2
@@ -138,7 +138,7 @@ def single_weight_evo_grid_search_experiment(exp_idx):
     exp_name = gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, "mlp")
 
     # averaged_ga_experiment should save any relevant results to a file
-    averaged_ga_experiment(
+    run_ga_for_grid_search(
         max_gens=50,
         pop_size=ps,
         mut_power=mp,
@@ -156,14 +156,59 @@ def single_weight_evo_grid_search_experiment(exp_idx):
         ptexts_test=atk_ptexts,
         true_validation_subkey=target_train_subkey,
         true_atk_subkey=target_atk_subkey,
-        parallelise=False,
+        parallelise=True,
         apply_fi=True,
         select_fun=sf,
         metric_type=mt,
-        n_experiments=10,
+        run_idx=run_idx,
         experiment_name=exp_name,
         save_results=True
     )
+
+def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
+           crossover_rate, mut_power_decay_rate, truncation_proportion,
+           atk_set_size, nn, x_valid, y_valid, ptexts_valid, x_test, y_test,
+           ptexts_test, true_validation_subkey, true_atk_subkey, parallelise,
+           apply_fi, select_fun, metric_type, run_idx, experiment_name="test",
+           save_results=True):
+    """
+    Runs a one GA experiment with the given parameters and stores the results
+    in a directory specific to this experiment.
+    """
+    # Create results directory if necessary
+    dir_path = f"results/{experiment_name}"
+    if not os.path.exists(dir_path):
+        os.mkdir(dir_path)
+
+    print(f"Starting experiment {experiment_name} run {run_idx}.")
+    ga = GeneticAlgorithm(
+        max_gens,
+        pop_size,
+        mut_power,
+        mut_rate,
+        crossover_rate,
+        mut_power_decay_rate,
+        truncation_proportion,
+        atk_set_size,
+        parallelise,
+        apply_fi,
+        select_fun,
+        metric_type
+    )
+
+    best_indiv = \
+        ga.run(nn, x_valid, y_valid, ptexts_valid, true_validation_subkey)
+
+    # Create a new model from the best individual's weights and evaluate it
+    cnn = NN_LOAD_FUNC()
+    cnn.set_weights(best_indiv.weights)
+    key_rank = exec_sca(cnn, x_test, y_test, ptexts_test, true_atk_subkey)
+
+    if save_results:
+        (_, best_fitness_per_gen, top_ten) = ga.get_results()
+        results = (best_indiv, best_fitness_per_gen, top_ten, key_rank)
+        with open(f"{dir_path}/run{run_idx}_results.pickle", "wb") as f:
+            pickle.dump(results, f)
 
 
 def ga_grid_search_results_eval():
