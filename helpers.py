@@ -68,7 +68,8 @@ def kfold_mean_key_ranks(y_pred_probs, atk_ptexts, true_subkey, k,
     mean_key_ranks = np.zeros(atk_set_size, dtype=np.uint8)
     for i in range(atk_set_size):
         mean_key_ranks[i] = round(np.mean(fold_key_ranks[i]))
-    with open(f"{experiment_name}_test_set_mean_key_ranks.pickle", "wb") as f:
+    filepath = f"results/{experiment_name}_test_set_mean_key_ranks.pickle"
+    with open(filepath, "wb") as f:
         pickle.dump(mean_key_ranks, f)
 
     # Print key ranks for various attack set sizes
@@ -264,7 +265,7 @@ def gen_ga_grid_search_arg_lists():
     Returns a list of lists, where each inner list contains arguments for a
     single grid search run for the weight evolution GA experiments.
     """
-    # Total amount of experiments: 1458
+    # Total amount of experiments: 486
     pop_sizes = [25, 50, 75]  # 3 values
     mut_pows = [0.01, 0.03, 0.05]  # 3 values
     mut_rates = [0.01, 0.04, 0.07]  # 3 values
