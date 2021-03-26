@@ -111,6 +111,9 @@ class GeneticAlgorithm:
             self.mut_power *= self.mut_power_decay_rate
             gen += 1
 
+        # Clean up
+        for i in range(len(self.population)):
+            self.fitnesses[i] = self.population[i].fitness
         if self.parallelise:
             self.pool.close()
 
