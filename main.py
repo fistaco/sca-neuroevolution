@@ -26,8 +26,8 @@ def setup_tf_gpu_parallelism():
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
-        print("Please provide the experiment index as an argument.")
-    single_weight_evo_grid_search_experiment(int(sys.argv[1]))
+        print("Missing arguments: experiment_idx, run_idx")
+    single_weight_evo_grid_search_experiment(int(sys.argv[1]), int(sys.argv[2]))
     # single_ga_experiment(remote_loc=False, use_mlp=False)
     # single_ensemble_experiment()
     # small_cnn_sgd_sca(subkey_idx=1)
