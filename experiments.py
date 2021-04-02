@@ -6,6 +6,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
+from constants import SELECT_FUNCTION_MAP, METRIC_TYPE_MAP
 from data_processing import (load_ascad_atk_variables, load_ascad_data,
                              load_prepared_ascad_vars, sample_data,
                              scale_inputs, shuffle_data)
@@ -18,7 +19,9 @@ from metrics import MetricType, keyrank
 from models import (NN_LOAD_FUNC, build_small_cnn_ascad,
                     build_small_cnn_ascad_trainable_conv,
                     load_nn_from_experiment_results, load_small_cnn_ascad,
-                    load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad)
+                    load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
+                    build_small_mlp_ascad_trainable_first_layer,
+                    build_small_mlp_ascad)
 from plotting import plot_gens_vs_fitness, plot_n_traces_vs_key_rank
 
 
@@ -117,7 +120,24 @@ def ga_grid_search():
         )
 
 
-def single_weight_evo_grid_search_experiment(exp_idx, run_idx):
+def weight_evo_experiment_from_params(cline_args, remote=True):
+    """
+    Runs a weight evolution grid search experiment from a set of given
+    parameters and stored the results for a given run index. This is useful
+    for the repeating of experiment that failed to store results.
+    """
+    ga_params = tuple([cline_args[i] for i in range(1, 9)])
+    ga_params[6] = SELECT_FUNCTION_MAP[params[6]]
+    ga_params[7] = METRIC_TYPE_MAP[params[7]]
+    run_idx = cline_args[-1]
+
+    single_weight_evo_grid_search_experiment(
+        exp_idx=777, run_idx=run_idx, params=ga_params, remote=remote
+    )
+
+
+def single_weight_evo_grid_search_experiment(exp_idx=0, run_idx=0,
+                                             params=None, remote=True):
     """
     Executes an averaged GA experiment over 10 runs, where the arguments of the
     GA are determined by the given index for the generated list of GA
@@ -129,13 +149,17 @@ def single_weight_evo_grid_search_experiment(exp_idx, run_idx):
     subkey_idx = 2
     (x_train, y_train, train_ptexts, target_train_subkey, x_atk, y_atk, \
         atk_ptexts, target_atk_subkey) = load_prepared_ascad_vars(
-            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=False
+            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=remote
         )
     nn = NN_LOAD_FUNC()
 
     # Generate arguments based on the given experiment index
-    (ps, mp, mr, mpdr, fdr, ass, sf, mt) = gen_ga_grid_search_arg_lists()[exp_idx]
+    (ps, mp, mr, mpdr, fdr, ass, sf, mt) = \
+        params or gen_ga_grid_search_arg_lists()[exp_idx]
     exp_name = gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, "mlp")
+
+    # Disable parallelisation on the HPC cluster
+    parallelise = not remote
 
     # averaged_ga_experiment should save any relevant results to a file
     run_ga_for_grid_search(
@@ -156,7 +180,7 @@ def single_weight_evo_grid_search_experiment(exp_idx, run_idx):
         ptexts_test=atk_ptexts,
         true_validation_subkey=target_train_subkey,
         true_atk_subkey=target_atk_subkey,
-        parallelise=True,
+        parallelise=parallelise,
         apply_fi=True,
         select_fun=sf,
         metric_type=mt,
@@ -533,6 +557,35 @@ def small_cnn_sgd_sca(save=False, subkey_idx=2):
     key_rank = exec_sca(cnn, x_atk_reshaped, y_atk, atk_ptexts, target_subkey, subkey_idx)
 
     print(f"Key rank obtained with efficient CNN on ASCAD: {key_rank}")
+
+
+def train_first_layer_ascad_mlp():
+    """
+    Trains the first layer of the efficient ASCAD MLP model and stores it.
+    """
+    subkey_idx = 2
+    (x_train, y_train, _, _, x_atk, y_atk, atk_ptexts, target_atk_subkey) = \
+        load_prepared_ascad_vars(
+            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=False,
+            for_sgd=True
+        )
+
+    # Define hyperparameters
+    n_epochs = 100
+    batch_size = 50
+    loss_fn = tf.keras.losses.CategoricalCrossentropy()
+    optimizer = tf.keras.optimizers.Adam(learning_rate=5e-3)
+
+    # Train
+    nn = build_small_mlp_ascad_trainable_first_layer(save=False)
+    nn.compile(optimizer, loss_fn)
+    history = nn.fit(x_train, y_train, batch_size, n_epochs)
+
+    nn.save("./trained_models/efficient_mlp_ascad_model_trained_first.h5")
+
+    # Attack with the trained model
+    key_rank = exec_sca(nn, x_atk, y_atk, atk_ptexts, target_atk_subkey, subkey_idx)
+    print(f"Key rank obtained after training the first FC layer: {key_rank}")
 
 
 def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=True):
