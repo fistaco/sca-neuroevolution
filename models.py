@@ -137,6 +137,34 @@ def load_small_cnn_ascad_trainable_conv():
     return keras.models.load_model(path, compile=False)
 
 
+def build_small_mlp_ascad_trainable_first_layer(save=False):
+    """
+    Builds and returns an MLP where only the first layer is trainable.
+    """
+    mlp = keras.Sequential(
+        [
+            keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(700,1)),
+            keras.layers.Flatten(),
+            keras.layers.Dense(10, activation=tf.nn.selu),
+            keras.layers.Dense(10, activation=tf.nn.selu, trainable=False),
+            keras.layers.Dense(256, activation=tf.nn.softmax, trainable=False)
+        ]
+    )
+
+    if save:
+        mlp.save("./trained_models/efficient_mlp_ascad_model_trainable_first.h5")
+
+    return mlp
+
+
+def load_small_mlp_ascad_trained_first_layer():
+    """
+    Loads and returns an MLP where only the first layer was trained with SGD.
+    """
+    path = "./trained_models/efficient_mlp_ascad_model_trained_first.h5"
+    return keras.models.load_model(path, compile=False)
+
+
 def build_small_cnn_rand_init():
     """
     Constructs and returns the small convolutional NN proposed by Zaid et al.
