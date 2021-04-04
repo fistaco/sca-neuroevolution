@@ -1,6 +1,5 @@
 import numpy as np
 from copy import deepcopy
-from tensorflow import keras
 
 from helpers import exec_sca
 from metrics import MetricType

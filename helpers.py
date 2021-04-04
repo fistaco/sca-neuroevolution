@@ -1,4 +1,5 @@
 import itertools
+import multiprocessing as mp
 import pickle
 
 import numpy as np
@@ -29,51 +30,53 @@ def bag_ensemble_predictions(nns, x_atk, y_atk, ptexts, true):
     """
 
 
-def kfold_mean_key_ranks(y_pred_probs, atk_ptexts, true_subkey, k,
-                         subkey_idx=2, experiment_name=""):
+def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k,
+                         key_idx=2, experiment_name="", parallelise=False):
     """
     Calculates and returns the mean key ranks of the given list of prediction
     probability arrays, the data set's metadata, and the desired number of
     folds.
     """
     # For each fold, store the key rank for all attack set sizes
-    atk_set_size = len(y_pred_probs)
-    fold_key_ranks = np.zeros((atk_set_size, k), dtype=np.uint8)
+    set_size = len(y_pred_probs)
+    fold_key_ranks = np.zeros((set_size, k), dtype=np.uint8)
 
-    # Reuse subsets of the predictions to simulate attacks over different folds
-    for fold in range(k):
-        print(f"Obtaining key ranks for fold {fold}...")
-        y_pred_probs, atk_ptexts = shuffle_data(y_pred_probs, atk_ptexts)
+    # For both the parallel and sequential methods, the core idea is to reuse
+    # subsets of the predictions to simulate attacks over different folds
+    if parallelise:
+        pool = mp.Pool(4)
 
-        # Track the summed log probability of each subkey candidate
-        subkey_logprobs = np.zeros(256)
+        # Compute key ranks for each trace amount in parallel
+        shuffled = [shuffle_data(y_pred_probs, ptexts) for i in range(k)]
+        argss = [
+            (i, shuffled[i][0], shuffled[i][1], key_idx, set_size, true_subkey)
+            for i in range(k)
+        ]
+        # Result = 2D array indexed with [fold, trace_idx]
+        map_results = pool.starmap(compute_fold_keyranks, argss)
+        for fold in range(k):
+            fold_key_ranks[:, fold] = map_results[fold]
+    else:
+        for fold in range(k):
+            y_pred_probs, ptexts = shuffle_data(y_pred_probs, ptexts)
+            fold_key_ranks[:, fold] = compute_fold_keyranks(
+                fold, y_pred_probs, ptexts, key_idx, set_size, true_subkey
+            )
 
-        # Iterate over each list of 256 probabilities in y_pred_probs.
-        # Each list corresponds to the predictions of 1 trace.
-        for (i, pred_probs) in enumerate(y_pred_probs):
-            pt = atk_ptexts[i][subkey_idx]
-
-            # Convert each label to a subkey and add its logprob to the sum
-            for (label, label_pred_prob) in enumerate(pred_probs):
-                subkey = label_to_subkey(pt, label)
-
-                # Avoid computing np.log(0), which returns -inf
-                logprob = np.log(label_pred_prob) if label_pred_prob > 0 else 0
-                subkey_logprobs[subkey] += logprob
-        
-            # Note that index i stores the key rank obtained after (i+1) traces
-            fold_key_ranks[i, fold] = keyrank(subkey_logprobs, true_subkey)
+    if parallelise:
+        pool.close()
+        pool.join()
 
     # Build an array that contains the mean key rank for each trace amount
-    mean_key_ranks = np.zeros(atk_set_size, dtype=np.uint8)
-    for i in range(atk_set_size):
+    mean_key_ranks = np.zeros(set_size, dtype=np.uint8)
+    for i in range(set_size):
         mean_key_ranks[i] = round(np.mean(fold_key_ranks[i]))
     filepath = f"results/{experiment_name}_test_set_mean_key_ranks.pickle"
     with open(filepath, "wb") as f:
         pickle.dump(mean_key_ranks, f)
 
     # Print key ranks for various attack set sizes
-    atk_set_sizes = range(atk_set_size + 1, 100)
+    atk_set_sizes = range(set_size + 1, 100)
     n_atk_set_sizes = len(atk_set_sizes)
     reached_keyrank_zero = False
     for (n_traces, rank) in enumerate(mean_key_ranks):
@@ -85,6 +88,37 @@ def kfold_mean_key_ranks(y_pred_probs, atk_ptexts, true_subkey, k,
             reached_keyrank_zero = True
     
     return mean_key_ranks
+
+
+def compute_fold_keyranks(fold, y_pred_probs, atk_ptexts, subkey_idx,
+                          atk_set_size, true_subkey):
+    """
+    Computes the key ranks for each amount of traces for a given fold of attack
+    traces, which are assumed to already be shuffled if necessary.
+    """
+    print(f"Obtaining key ranks for fold {fold}...")
+    fold_key_ranks = np.zeros(atk_set_size, dtype=np.uint8)
+
+    # Track the summed log probability of each subkey candidate
+    subkey_logprobs = np.zeros(256)
+
+    # Iterate over each list of 256 probabilities in y_pred_probs.
+    # Each list corresponds to the predictions of 1 trace.
+    for (i, pred_probs) in enumerate(y_pred_probs):
+        pt = atk_ptexts[i][subkey_idx]
+
+        # Convert each label to a subkey and add its logprob to the sum
+        for (label, label_pred_prob) in enumerate(pred_probs):
+            subkey = label_to_subkey(pt, label)
+
+            # Avoid computing np.log(0), which returns -inf
+            logprob = np.log(label_pred_prob) if label_pred_prob > 0 else 0
+            subkey_logprobs[subkey] += logprob
+    
+        # Note that index i stores the key rank obtained after (i+1) traces
+        fold_key_ranks[i] = keyrank(subkey_logprobs, true_subkey)
+
+    return fold_key_ranks
 
 
 def compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey,

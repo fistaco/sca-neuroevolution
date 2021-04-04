@@ -23,101 +23,7 @@ from models import (NN_LOAD_FUNC, build_small_cnn_ascad,
                     build_small_mlp_ascad_trainable_first_layer,
                     build_small_mlp_ascad)
 from plotting import plot_gens_vs_fitness, plot_n_traces_vs_key_rank
-
-
-def ga_grid_search():
-    pop_sizes = [25, 50, 75]  # 3 values
-    mut_pows = [0.01, 0.03, 0.05]  # 3 values
-    mut_rates = [0.01, 0.04, 0.07]  # 3 values
-    mut_pow_dec_rates = [0.99, 0.999, 1.0]  # 3 values
-    fi_dec_rates = [0.0, 0.2, 0.4]  # 3 values
-    atk_set_sizes = [16, 64, 112]  # 3 values
-    selection_methods = ["tournament", "roulette_wheel"]  # 2 values
-    # TODO: test different weight init versions
-
-    # Set up variables for progress tracking
-    n_experiments = len(pop_sizes)*len(mut_pows)*len(mut_rates)* \
-        len(mut_pow_dec_rates)*len(fi_dec_rates)*len(atk_set_sizes)* \
-        len(selection_methods)
-    current_exp_idx = 1
-
-    # Load data
-    subkey_idx = 2
-    (x_train, y_train, train_ptexts, target_train_subkey, x_atk, y_atk, \
-        atk_ptexts, target_atk_subkey) = load_prepared_ascad_vars(
-            subkey_idx=subkey_idx, scale=True, use_mlp=False, remote_loc=False
-        )
-    nn = NN_LOAD_FUNC()
-
-    # TODO: Keep track of data frame with key ranks for all parameter combos
-
-    def run_exp(ps, mp, mr, mpdr, fdr, ass, sf, mt):
-        print(f"Starting experiment {i}/{n_experiments}...")
-        current_exp_idx += 1
-
-        exp_name = \
-            gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, "cnn")
-
-        avg_key_rank = averaged_ga_experiment(
-            max_gens=100,
-            pop_size=ps,
-            mut_power=mp,
-            mut_rate=mr,
-            crossover_rate=0.5,
-            mut_power_decay_rate=mpdr,
-            truncation_proportion=0.4,
-            atk_set_size=ass,
-            nn=nn,
-            x_valid=x_train,
-            y_valid=y_train,
-            ptexts_valid=train_ptexts,
-            x_test=x_atk,
-            y_test=y_atk,
-            ptexts_test=atk_ptexts,
-            true_validation_subkey=target_train_subkey,
-            true_atk_subkey=target_atk_subkey,
-            parallelise=True,
-            apply_fi=True,
-            select_fun=sf,
-            metric_type=mt,
-            n_experiments=10,
-            experiment_name=exp_name
-        )
-
-        return (avg_key_rank, exp_name)
-
-    # Track best key rank and the corresponding experiment name
-    best_key_rank = 255
-    best_exp_name = "experiment_name_placeholder"
-
-    for ps in pop_sizes:
-        for mp in mut_pows:
-            for mr in mut_rates:
-                for mpdr in mut_pow_dec_rates:
-                    for fdr in fi_dec_rates:
-                        for ass in atk_set_sizes:
-                            for sf in selection_methods:
-                                for mt in metrics:
-                                    (key_rank, exp_name) = run_exp(
-                                        ps, mp, mr, mpdr, fdr, ass, sf, mt
-                                    )
-
-                                    if key_rank < best_key_rank:
-                                        best_key_rank = key_rank
-                                        best_exp_name = exp_name
-
-                                        print(f"New best key rank: {key_rank}")
-                                        print(f"Achieved with: {exp_name}")
-
-    # Validate the best network on the attack set over 100 folds
-    nn = load_nn_from_experiment_results(best_exp_name)
-    kfold_ascad_atk_with_varying_size(
-            100,
-            nn,
-            subkey_idx=2,
-            experiment_name=best_exp_name + "-final100folds",
-            atk_data=(x_atk, y_atk, target_atk_subkey, atk_ptexts)
-        )
+from result_processing import ResultCategory
 
 
 def weight_evo_experiment_from_params(cline_args, remote=True):
@@ -126,13 +32,18 @@ def weight_evo_experiment_from_params(cline_args, remote=True):
     parameters and stored the results for a given run index. This is useful
     for the repeating of experiment that failed to store results.
     """
-    ga_params = tuple([cline_args[i] for i in range(1, 9)])
-    ga_params[6] = SELECT_FUNCTION_MAP[params[6]]
-    ga_params[7] = METRIC_TYPE_MAP[params[7]]
-    run_idx = cline_args[-1]
+    ga_params = [cline_args[i] for i in range(1, 9)]
+
+    # Convert each param to its proper datatype and form
+    ga_params[0] = int(ga_params[0])
+    ga_params[1:5] = [float(param) for param in ga_params[1:5]]
+    ga_params[5] = int(ga_params[5])
+    ga_params[6] = SELECT_FUNCTION_MAP[ga_params[6]]
+    ga_params[7] = METRIC_TYPE_MAP[ga_params[7]]
+    run_idx = int(cline_args[-1])
 
     single_weight_evo_grid_search_experiment(
-        exp_idx=777, run_idx=run_idx, params=ga_params, remote=remote
+        exp_idx=777, run_idx=run_idx, params=tuple(ga_params), remote=remote
     )
 
 
@@ -224,9 +135,9 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
         ga.run(nn, x_valid, y_valid, ptexts_valid, true_validation_subkey)
 
     # Create a new model from the best individual's weights and evaluate it
-    cnn = NN_LOAD_FUNC()
-    cnn.set_weights(best_indiv.weights)
-    key_rank = exec_sca(cnn, x_test, y_test, ptexts_test, true_atk_subkey)
+    nn = NN_LOAD_FUNC()
+    nn.set_weights(best_indiv.weights)
+    key_rank = exec_sca(nn, x_test, y_test, ptexts_test, true_atk_subkey)
 
     if save_results:
         (_, best_fitness_per_gen, top_ten) = ga.get_results()
@@ -235,12 +146,32 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
             pickle.dump(results, f)
 
 
-def ga_grid_search_results_eval():
-    # Evaluate the best network
-    df = None
+def ga_grid_search_best_networks_eval(nns):
+    """
+    Plot results for all of the given potential best networks.
+    """
+    # Load data
+    subkey_idx = 2
+    (_, _, _, _, x_atk, y_atk, atk_ptexts, target_atk_subkey) = \
+        load_prepared_ascad_vars(subkey_idx, True, True, remote)
 
-    # Plot the influence of each parameter
-    pass
+    # Evaluate each NN's performance on the same 3000 traces
+
+
+
+def ga_grid_search_parameter_influence_eval(df):
+    # 
+    n_experiments = len(df)//10
+    mean_key_ranks = np.zeros(n_experiments, dtype=np.uint8)
+
+    for i in range(n_experiments):
+        mean_key_ranks[i] = np.mean(df[i:i + 10, ResultCategory.KEY_RANK])
+
+    # Find parameters with the best mean results
+    best_exp_idx = np.argmax(mean_key_ranks)
+    best_params = gen_ga_grid_search_arg_lists()[best_exp_idx]
+
+    # TODO: Vary each parameter in the best params and plot its influence
 
 
 def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
@@ -600,16 +531,17 @@ def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=True):
     
     # print(f"Keyrank = {exec_sca(cnn, x_atk, y_atk, atk_ptexts, target_subkey)}")
     kfold_ascad_atk_with_varying_size(
-        10,
+        3,
         cnn,
         subkey_idx=subkey_idx,
         experiment_name="test",
-        atk_data=(x_atk, y_atk, target_subkey, atk_ptexts)
+        atk_data=(x_atk, y_atk, target_subkey, atk_ptexts),
+        parallelise=False
     )
     
 
 def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
-    atk_data=None):
+    atk_data=None, parallelise=False):
     # Use the given data if possible. Load 10k ASCAD attack traces otherwise.
     (x_atk, y_atk, target_subkey, atk_ptexts) = \
         atk_data if atk_data \
@@ -619,7 +551,8 @@ def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
     y_pred_probs = nn.predict(x_atk)
 
     mean_ranks = kfold_mean_key_ranks(
-        y_pred_probs, atk_ptexts, target_subkey, k, subkey_idx, experiment_name
+        y_pred_probs, atk_ptexts, target_subkey, k, subkey_idx,
+        experiment_name, parallelise=parallelise
     )
 
     if experiment_name:
