@@ -44,7 +44,7 @@ def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k,
     # For both the parallel and sequential methods, the core idea is to reuse
     # subsets of the predictions to simulate attacks over different folds
     if parallelise:
-        pool = mp.Pool(4)
+        pool = mp.Pool(6)
 
         # Compute key ranks for each trace amount in parallel
         shuffled = [shuffle_data(y_pred_probs, ptexts) for i in range(k)]

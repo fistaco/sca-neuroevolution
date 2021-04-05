@@ -1,3 +1,4 @@
+import multiprocessing as mp
 import os
 import pickle
 from time import time
@@ -6,22 +7,23 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 
-from constants import SELECT_FUNCTION_MAP, METRIC_TYPE_MAP
+from constants import METRIC_TYPE_MAP, SELECT_FUNCTION_MAP
 from data_processing import (load_ascad_atk_variables, load_ascad_data,
                              load_prepared_ascad_vars, sample_data,
                              scale_inputs, shuffle_data)
 from genetic_algorithm import GeneticAlgorithm
-from helpers import (compute_mem_req, compute_mem_req_from_known_vals,
-                     exec_sca, gen_experiment_name, gen_extended_exp_name,
+from helpers import (compute_fold_keyranks, compute_mem_req,
+                     compute_mem_req_from_known_vals, exec_sca,
+                     gen_experiment_name, gen_extended_exp_name,
                      gen_ga_grid_search_arg_lists, kfold_mean_key_ranks,
                      label_to_subkey)
 from metrics import MetricType, keyrank
 from models import (NN_LOAD_FUNC, build_small_cnn_ascad,
                     build_small_cnn_ascad_trainable_conv,
-                    load_nn_from_experiment_results, load_small_cnn_ascad,
-                    load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
+                    build_small_mlp_ascad,
                     build_small_mlp_ascad_trainable_first_layer,
-                    build_small_mlp_ascad)
+                    load_nn_from_experiment_results, load_small_cnn_ascad,
+                    load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad)
 from plotting import plot_gens_vs_fitness, plot_n_traces_vs_key_rank
 from result_processing import ResultCategory
 
@@ -146,17 +148,116 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
             pickle.dump(results, f)
 
 
-def ga_grid_search_best_networks_eval(nns):
+def ga_grid_search_find_best_network():
     """
-    Plot results for all of the given potential best networks.
+    Compare all of the given potential best networks by attacking a smaller
+    data set.
     """
+    # Extract best networks from results
+    with open("ga_weight_evo_grid_key_rank_zero_indivs.pickle", "rb") as f:
+        key_rank_zero_indivs = pickle.load(f)
+    nns = np.empty(len(key_rank_zero_indivs), dtype=object)
+    for i in range(len(nns)):
+        nns[i] = NN_LOAD_FUNC()
+        nns[i].set_weights(key_rank_zero_indivs[i][0].weights)
+
     # Load data
     subkey_idx = 2
     (_, _, _, _, x_atk, y_atk, atk_ptexts, target_atk_subkey) = \
-        load_prepared_ascad_vars(subkey_idx, True, True, remote)
+        load_prepared_ascad_vars(subkey_idx, True, True, False)
+    n_samples = 5000
+    atk_set_size = len(x_atk)
 
-    # Evaluate each NN's performance on the same 3000 traces
+    # Attack once with each NN
+    nn_y_pred_probss = [nn.predict(x_atk) for nn in nns]
+    avg_key_ranks = np.zeros(len(nns), dtype=float)
 
+    # Prepare argument lists for parallel fold evaluation
+    argss = [
+        (i, np.random.choice(atk_set_size, n_samples), atk_ptexts, subkey_idx,
+        atk_set_size, nn_y_pred_probss, target_atk_subkey, n_samples)
+        for i in range(30)
+    ]
+    pool = mp.Pool(6)
+    # For 30 folds, evaluate each NN's performance on the same subset of traces
+    # The resulting array will have shape (30, len(nns))
+    key_ranks_per_fold = pool.starmap(single_fold_multiple_nns_eval, argss)
+    pool.close()
+    pool.join()
+
+    # Save intermediate results
+    with open("ga_gs_best_nns_key_ranks_per_fold.pickle", "wb") as f:
+        pickle.dump(key_ranks_per_fold, f)
+
+    # Obtain the averages of the results
+    for i in range(len(nns)):
+        avg_key_ranks[i] = 0
+        for fold in range(30):
+            avg_key_ranks[i] += key_ranks_per_fold[fold][i]/30
+
+    with open("ga_gs_best_networks_avg_key_ranks.pickle", "wb") as f:
+        pickle.dump(avg_key_ranks, f)
+
+    print(f"Best avg key rank: {np.min(avg_key_ranks)}")
+    best_nn_idx = np.argmin(avg_key_ranks)
+    with open("ga_gs_best_indiv.pickle", "wb") as f:
+        # Save as (indiv, experiment_name)
+        pickle.dump(key_rank_zero_indivs[best_nn_idx], f)
+
+
+def single_fold_multiple_nns_eval(fold, indices, atk_ptexts, subkey_idx,
+                                  atk_set_size, nn_y_pred_probss,
+                                  true_subkey, n_samples):
+    """
+    Computes the key rank for each given list of individual NN predictions
+    over a single fold of the given data set with the given indices.
+    """
+    ptexts = atk_ptexts[indices]
+
+    avg_fold_key_ranks = np.zeros(len(nn_y_pred_probss), dtype=float)
+    for (i, y_pred_probs) in enumerate(nn_y_pred_probss):
+        run_idx = i*30 + fold
+        pred_probs = y_pred_probs[indices]
+        trace_amnt_key_ranks = compute_fold_keyranks(
+            run_idx, pred_probs, ptexts, subkey_idx, atk_set_size, true_subkey
+        )
+
+        avg_fold_key_ranks[i] = trace_amnt_key_ranks[n_samples - 1]
+
+    return avg_fold_key_ranks
+
+
+def ga_grid_search_best_network_eval():
+    """
+    Attacks the ASCAD data set over 100 folds with the best NN resulting from
+    the GA grid search and plots the results.
+    """
+    # Load best network
+    with open("ga_gs_best_indiv.pickle", "rb") as f:
+        # Save as (indiv, experiment_name)
+        (indiv, exp_name) = pickle.load(f)
+    nn = NN_LOAD_FUNC()
+    nn.set_weights(indiv.weights)
+
+    # Load data
+    subkey_idx = 2
+    (_, _, _, _, x_atk, y_atk, atk_ptexts, target_atk_subkey) = \
+        load_prepared_ascad_vars(subkey_idx, True, True, False)
+    n_folds = 100
+
+    # Execute attack with the best NN over 100 folds
+    kfold_ascad_atk_with_varying_size(
+        n_folds,
+        nn,
+        subkey_idx=subkey_idx,
+        experiment_name="best_grid_search_nn_100fold_eval",
+        atk_data=(x_atk, y_atk, target_atk_subkey, atk_ptexts),
+        parallelise=True
+    )
+
+
+def ensemble_atk_with_best_grid_search_networks():
+    pass
 
 
 def ga_grid_search_parameter_influence_eval(df):
@@ -171,7 +272,7 @@ def ga_grid_search_parameter_influence_eval(df):
     best_exp_idx = np.argmax(mean_key_ranks)
     best_params = gen_ga_grid_search_arg_lists()[best_exp_idx]
 
-    # TODO: Vary each parameter in the best params and plot its influence
+    # TODO: Vary each parameter in the best params and plot their influence
 
 
 def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
