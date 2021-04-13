@@ -12,7 +12,7 @@ class NeuralNetworkGenome:
         self.fitness = -1
         # TODO: multiple ways of initialising weights?
 
-        self.avg_parent_fitness = init_parent_fitness
+        self.avg_parent_fitness = None
 
     def random_weight_init(self):
         """
