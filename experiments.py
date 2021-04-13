@@ -24,8 +24,9 @@ from models import (NN_LOAD_FUNC, build_small_cnn_ascad,
                     build_small_mlp_ascad_trainable_first_layer,
                     load_nn_from_experiment_results, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad)
-from plotting import plot_gens_vs_fitness, plot_n_traces_vs_key_rank
-from result_processing import ResultCategory
+from plotting import (plot_gens_vs_fitness, plot_n_traces_vs_key_rank,
+                      plot_var_vs_key_rank)
+from result_processing import ResultCategory, filter_df
 
 
 def weight_evo_experiment_from_params(cline_args, remote=True):
@@ -74,7 +75,6 @@ def single_weight_evo_grid_search_experiment(exp_idx=0, run_idx=0,
     # Disable parallelisation on the HPC cluster
     parallelise = not remote
 
-    # averaged_ga_experiment should save any relevant results to a file
     run_ga_for_grid_search(
         max_gens=50,
         pop_size=ps,
@@ -256,23 +256,45 @@ def ga_grid_search_best_network_eval():
     )
 
 
-def ensemble_atk_with_best_grid_search_networks():
-    pass
+def ensemble_atk_with_best_grid_search_networks(top_n=5):
+    subkey_idx = 2
+    (_, _, _, _, x_atk, y_atk, atk_ptexts, target_atk_subkey) = \
+        load_prepared_ascad_vars(subkey_idx, True, True, False)
+
+    # Load all best networks and find the top n
+    with open("ga_weight_evo_grid_key_rank_zero_indivs.pickle", "rb") as f:
+        key_rank_zero_indivs = pickle.load(f)
+    with open("ga_gs_best_networks_avg_key_ranks.pickle", "rb") as f:
+        avg_key_ranks = pickle.load(f)
+    top_five_idxs = np.argsort(avg_key_ranks)[:top_n]
+    nns = [NN_LOAD_FUNC() for i in range(top_n)]
+    for i in range(top_n):
+        indiv = key_rank_zero_indivs[top_five_idxs[i]][0]
+        nns[i].set_weights(indiv.weights)
+
+    ensemble_model_sca(
+        nns, 30, x_atk, y_atk, target_atk_subkey, atk_ptexts, subkey_idx,
+        "ensemble_from_best_grid_search_networks"
+    )
 
 
-def ga_grid_search_parameter_influence_eval(df):
-    # 
-    n_experiments = len(df)//10
-    mean_key_ranks = np.zeros(n_experiments, dtype=np.uint8)
+def ga_grid_search_parameter_influence_eval():
+    # Load df and params for best average performance
+    with open("ga_weight_evo_grid_search_results.pickle", "rb") as f:
+        df = pickle.load(f)
+    with open("ga_weight_evo_grid_best_experiment_data.pickle", "rb") as f:
+        (ps, mp, mr, mpdr, fdr, ass, sm, _, _, _, key_rank) = pickle.load(f)
+    params = (ps, mp, mr, mpdr, fdr, ass, sm)
 
-    for i in range(n_experiments):
-        mean_key_ranks[i] = np.mean(df[i:i + 10, ResultCategory.KEY_RANK])
-
-    # Find parameters with the best mean results
-    best_exp_idx = np.argmax(mean_key_ranks)
-    best_params = gen_ga_grid_search_arg_lists()[best_exp_idx]
-
-    # TODO: Vary each parameter in the best params and plot their influence
+    # For each variable, plot its influence on the final key rank
+    result_categories = list(ResultCategory)
+    for result_cat in result_categories[:7]:
+        sub_df = filter_df(df, params, exempt_idx=result_cat.value)
+        plot_var_vs_key_rank(
+            sub_df[:, result_cat.value],
+            sub_df[:, ResultCategory.KEY_RANK.value],
+            result_cat
+        )
 
 
 def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
@@ -311,8 +333,6 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
     end = time()
     t = int(end-start)
     print(f"Time elapsed: {t}")
-    # TODO: Create new model from best individual's weights here and test it
-    # best_nn = best_indiv.model
 
     # Save and plot results
     ga_results = ga.save_results(best_indiv, experiment_name)
@@ -338,7 +358,7 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
     return ga_results
 
 
-def single_ga_experiment(remote_loc=False, use_mlp=False):
+def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False):
     (x_train, y_train, x_atk, y_atk, train_meta, atk_meta) = \
         load_ascad_data(load_metadata=True, remote_loc=remote_loc)
     original_input_shape = (700, 1)
@@ -367,11 +387,12 @@ def single_ga_experiment(remote_loc=False, use_mlp=False):
     nn = NN_LOAD_FUNC()
     # nn = load_small_mlp_ascad()
 
-    pop_size = 50
-    atk_set_size = 16
+    pop_size = 25
+    atk_set_size = 64
     select_fun = "tournament"
-    run_ga(
-        max_gens=100,
+    execution_func = run_ga if not averaged else averaged_ga_experiment
+    execution_func(
+        max_gens=25,
         pop_size=pop_size,
         mut_power=0.03,
         mut_rate=0.04,
@@ -389,10 +410,10 @@ def single_ga_experiment(remote_loc=False, use_mlp=False):
         true_validation_subkey=target_train_subkey,
         true_atk_subkey=target_atk_subkey,
         subkey_idx=subkey_idx,
-        parallelise=True,
-        apply_fi=True,
+        parallelise=not remote_loc,
+        apply_fi=True,  # TODO: Check if FI is applied correctly, i.e. with cascading effect
         select_fun=select_fun,
-        metric_type=MetricType.KEYRANK_AND_ACCURACY,
+        metric_type=MetricType.INCREMENTAL_KEYRANK,
         experiment_name=gen_experiment_name(pop_size, atk_set_size, select_fun)
     )
 
@@ -401,8 +422,8 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
            crossover_rate, mut_power_decay_rate, truncation_proportion,
            atk_set_size, nn, x_valid, y_valid, ptexts_valid, x_test, y_test,
            ptexts_test, true_validation_subkey, true_atk_subkey, parallelise,
-           apply_fi, select_fun, metric_type, n_experiments=10,
-           experiment_name="test", save_results=False):
+           apply_fi, select_fun, metric_type, subkey_idx=2, n_experiments=10,
+           experiment_name="test", save_results=True):
     """
     Runs a given amount of GA experiments with the given parameters and returns
     the average key rank obtained with the full given attack set.
@@ -434,8 +455,8 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
         )
 
         best_indiv = \
-            ga.run(nn, x_valid, y_valid, ptexts_valid, true_validation_subkey)
-
+            ga.run(nn, x_valid, y_valid, ptexts_valid, true_validation_subkey,
+                   subkey_i=subkey_idx)
 
         # Create a new model from the best individual's weights and evaluate it
         cnn = NN_LOAD_FUNC()
@@ -498,43 +519,44 @@ def single_ensemble_experiment():
         evaluate_on_test_set=False
     )
 
-    ensemble_model_sca(
-        ga_results, model_load_func, 10, x_atk, y_atk,
-        target_atk_subkey, atk_ptexts, subkey_idx=subkey_idx,
-        experiment_name=f"ensemble_{exp_name}"
-    )
-
-
-def ensemble_model_sca(ga_results, model_load_func, n_folds, x_atk, y_atk,
-                       true_subkey, ptexts, subkey_idx=2,
-                       experiment_name="ensemble_test"):
-    """
-    Evaluates an ensemble of the top performing neural networks from the given
-    GA results on the given attack set over several folds. This is accomplished
-    by using the bagging method, i.e. summing the prediction probabilities of
-    each model.
-    """
     top_indivs = ga_results[2]  # Sorted from best to worst fitness
     n_indivs = len(top_indivs)
 
-    nns = np.empty(n_indivs, dtype=object)
     # Extract NNs from GA results
+    nns = np.empty(n_indivs, dtype=object)
     for i in range(n_indivs):
-        nns[i] = model_load_func()
+        nns[i] = NN_LOAD_FUNC()
         nns[i].set_weights(top_indivs[i].weights)
 
+    ensemble_model_sca(
+        nns, 10, x_atk, y_atk, target_atk_subkey, atk_ptexts,
+        subkey_idx=subkey_idx, experiment_name=f"ensemble_{exp_name}"
+    )
+
+
+def ensemble_model_sca(nns, n_folds, x_atk, y_atk, true_subkey, ptexts,
+                       subkey_idx=2, experiment_name="ensemble_test"):
+    """
+    Evaluates an ensemble of the given top performing neural networks on the
+    given attack set over several folds. This is accomplished by using the
+    bagging method, i.e. summing the prediction probabilities of each model.
+    """
+    print("Performing SCAs with individual networks for comparison...")
     # Perform SCAs for comparison for the 1st, 3rd, and 5th best NNs
     nn_indices = [0, 2, 4]
     key_rankss = np.empty(len(nn_indices) + 1, dtype=object)  # [[key_rank]]
     for (i, nn_idx) in enumerate(nn_indices):
         key_rankss[i] = kfold_ascad_atk_with_varying_size(
-            n_folds, nns[nn_idx], atk_data=(x_atk, y_atk, true_subkey, ptexts)
+            n_folds, nns[nn_idx], atk_data=(x_atk, y_atk, true_subkey, ptexts),
+            parallelise=True
         )
 
+    print("Commencing ensemble attack.")
     # Perform the ensemble SCA
     bagged_pred_probs = sum([nn.predict(x_atk) for nn in nns])
     ensemble_key_ranks = kfold_mean_key_ranks(
-        bagged_pred_probs, ptexts, true_subkey, n_folds, subkey_idx, experiment_name
+        bagged_pred_probs, ptexts, true_subkey, n_folds, subkey_idx,
+        experiment_name, parallelise=True
     )
     key_rankss[-1] = ensemble_key_ranks
 
