@@ -3,6 +3,8 @@ import multiprocessing as mp
 import pickle
 
 import numpy as np
+from tensorflow.keras.losses import CategoricalCrossentropy
+CCE = CategoricalCrossentropy()
 
 from constants import INVERSE_SBOX, SBOX
 from data_processing import shuffle_data
@@ -19,15 +21,6 @@ def exec_sca(ann_model, x_atk, y_atk, ptexts, true_subkey, subkey_idx=2):
     subkey_logprobs = subkey_pred_logprobs(y_pred_probs, ptexts, subkey_idx)
 
     return keyrank(subkey_logprobs, true_subkey)
-
-
-def bag_ensemble_predictions(nns, x_atk, y_atk, ptexts, true):
-    """
-    Executes a side-channel attack on the given traces by summing the
-    predictions from the given neural networks.
-
-    Returns the summed predictions 
-    """
 
 
 def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k,
@@ -91,12 +84,13 @@ def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k,
 
 
 def compute_fold_keyranks(fold, y_pred_probs, atk_ptexts, subkey_idx,
-                          atk_set_size, true_subkey):
+                          atk_set_size, true_subkey, verbose=True):
     """
     Computes the key ranks for each amount of traces for a given fold of attack
     traces, which are assumed to already be shuffled if necessary.
     """
-    print(f"Obtaining key ranks for fold {fold}...")
+    if verbose:
+        print(f"Obtaining key ranks for fold {fold}...")
     fold_key_ranks = np.zeros(atk_set_size, dtype=np.uint8)
 
     # Track the summed log probability of each subkey candidate
@@ -122,7 +116,7 @@ def compute_fold_keyranks(fold, y_pred_probs, atk_ptexts, subkey_idx,
 
 
 def compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey,
-                    subkey_idx=2):
+                    atk_set_size, subkey_idx=2):
     """
     Executes a side-channel attack on the given traces using the given neural
     network and uses the obtained prediction probabilities to compute the key
@@ -133,12 +127,13 @@ def compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey,
     """
     y_pred_probs = nn.predict(x_atk)
     return evaluate_preds(
-        y_pred_probs, metric_type, ptexts, true_subkey, y_atk, subkey_idx
+        y_pred_probs, metric_type, ptexts, true_subkey, y_atk, atk_set_size,
+        subkey_idx
     )
 
 
 def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
-                   subkey_idx=2):
+                   set_size, subkey_idx=2):
     """
     Evaluates the given predictions using the method indicated by the given
     metric type and returns the result.
@@ -156,6 +151,18 @@ def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
         subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx)
         res = keyrank(subkey_probs, true_subkey) - accuracy(preds, true_labels)
         return res
+    elif metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
+        return CCE(true_labels, preds).numpy()  # true_labels should be 1-hot
+    elif metric_type == MetricType.INCREMENTAL_KEYRANK:
+        # f = (n_traces_for_kr_zero + kr_10_pct + 0.5*kr_50_pct)
+        key_ranks = compute_fold_keyranks(
+            7, preds, ptexts, subkey_idx, set_size, true_subkey, False)
+
+        kr0_n_traces = first_zero_value_idx(key_ranks, set_size)/(set_size - 1)
+        kr_10pct = min(key_ranks[round(set_size*0.1) - 1], 128)/128
+        kr_50pct = min(key_ranks[round(set_size*0.5) - 1], 128)/128
+
+        return kr0_n_traces + kr_10pct + 0.5*kr_50pct
     else:
         print("Encountered invalid metric type. Quitting.")
         exit(1)
@@ -317,3 +324,21 @@ def gen_ga_grid_search_arg_lists():
     ]
 
     return argss
+
+
+def first_idx_with_value(a, x, a_len=None):
+    """
+    Finds the index in array a where element x first appears. Returns the last
+    index if the element is not found.
+    """
+    for (i, n) in enumerate(a):
+        if n == x:
+            return i
+    return a_len - 1 or len(a) - 1
+
+
+def first_zero_value_idx(a, a_len=None):
+    """
+    finds the index in array a where value 0 first appears.
+    """
+    return first_idx_with_value(a, 0, a_len)

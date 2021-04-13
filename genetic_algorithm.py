@@ -74,6 +74,9 @@ class GeneticAlgorithm:
         Runs the genetic algorithm with the parameters it was constructed with
         and returns the best found individual.
         """
+        if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
+            y_atk_full = tf.keras.utils.to_categorical(y_atk_full, 256)
+
         self.initialise_population(nn)
 
         # Track generational information
@@ -99,7 +102,7 @@ class GeneticAlgorithm:
 
             print("Selecting individuals...")
             # Rest of GA main loop, i.e. selection & offspring production
-            self.population[:self.pop_size] = self.selection_method()  # TODO: Add truncatiom selection?
+            self.population[:self.pop_size] = self.selection_method()  # TODO: Add truncation selection?
             print("Producing offspring...")
             self.population[self.pop_size:] = self.produce_offpsring()
 
@@ -137,7 +140,11 @@ class GeneticAlgorithm:
         if self.parallelise:
             # Set up a tuple of arguments for each concurrent process
             argss = [
-                (self.population[i].weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx, self.metric_type)
+                (
+                    self.population[i].weights, x_atk, y_atk, ptexts,
+                    true_subkey, subkey_idx, self.metric_type,
+                    self.atk_set_size
+                )
                 for i in range(len(self.population))
             ]
             # Run fitness evaluations in parallel
@@ -149,10 +156,11 @@ class GeneticAlgorithm:
         else:
             # Run fitness evaluations sequentially
             for (i, indiv) in enumerate(self.population):
-                self.fitnesses[i] = \
-                    evaluate_fitness(indiv.weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx, self.metric_type)
-                indiv.fitness = self.fitnesses[i]
-    
+                self.fitnesses[i] = indiv.fitness = evaluate_fitness(
+                    indiv.weights, x_atk, y_atk, ptexts, true_subkey,
+                    subkey_idx, self.metric_type, self.atk_set_size
+                )
+
     def adjust_fitnesses(self, fi_decay=0.2):
         """
         Adjusts each individual's fitness based on that of their parent(s) by
@@ -166,15 +174,18 @@ class GeneticAlgorithm:
             # indiv.fitness = self.fitnesses[i] = round(
             #     (indiv.fitness + indiv.avg_parent_fitness * (1 - fi_decay))/2
             # )
-            f, fp = indiv.fitness, indiv.avg_parent_fitness
+            f = indiv.fitness
+            fp = indiv.avg_parent_fitness or f
 
-            fitness = adjust_fitness(f, fp, fi_decay, self.fitness_scaling)
+            fitness = adjust_fitness(f, fp, fi_decay)
 
             # Avoid rounding to 0 for (0.5 < f < 1.0) during integer conversion
             if self.metric_type == MetricType.KEYRANK:
                 fitness = round(fitness)
 
             indiv.fitness = self.fitnesses[i] = fitness
+            if not indiv.avg_parent_fitness:
+                indiv.avg_parent_fitness = fitness
 
     def roulette_wheel_selection(self):
         """
@@ -208,7 +219,7 @@ class GeneticAlgorithm:
         # Build the new population by "spinning the wheel" repeatedly
         for i in range(self.pop_size):
             idx = cumulative_select_probs.searchsorted(np.random.uniform())
-            new_population[i] = self.population[idx]
+            new_population[i] = self.population[idx].clone()
 
         return new_population
 
@@ -226,12 +237,12 @@ class GeneticAlgorithm:
             for j in range(t_size - 1):
                 indiv = np.random.choice(self.population)
                 if indiv.fitness < winner.fitness:
-                    winner = indiv
+                    winner = indiv.clone()
             
-            new_population[i] = winner
+            new_population[i] = winner.clone()  # TODO: Implement version without replacement
         
         return new_population
-    
+
     def produce_offpsring(self):
         """
         Produces and returns offspring by applying either mutation or crossover
@@ -291,10 +302,10 @@ class GeneticAlgorithm:
 
 
 def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx,
-                     metric_type=MetricType.KEYRANK):
+                     metric_type, atk_set_size):
     """
     Evaluates the fitness of an individual by using its weights to construct a
-    new CNN, which is used to execute an SCA on the given data.
+    new NN, which is used to execute an SCA on the given data.
 
     Returns:
         The key rank obtained with the SCA.
@@ -302,15 +313,21 @@ def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx,
     nn = NN_LOAD_FUNC()
     nn.set_weights(weights)
 
-    return compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey, subkey_idx)
-    # return exec_sca(cnn, x_atk, y_atk, ptexts, true_subkey, subkey_idx)
+    return compute_fitness(
+        nn, x_atk, y_atk, ptexts, metric_type, true_subkey, atk_set_size,
+        subkey_idx
+    )
 
 
-def adjust_fitness(fitness, avg_parent_fitness, fi_decay, scaling=1.0):
+def adjust_fitness(fitness, avg_parent_fitness, fi_decay, scaling=0.5):
     """
     Adjusts and returns the given individual's fitness based on itself, its
     average parent fitness, and the given fitness inheritance decay value.
     """
+    # res = scaling*(
+    #     fitness + avg_parent_fitness * (1 - fi_decay)
+    # )
+    # print(f"f={fitness}, fp={avg_parent_fitness}, f_adj={res}")
     return scaling*(
         fitness + avg_parent_fitness * (1 - fi_decay)
     )

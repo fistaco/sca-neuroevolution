@@ -33,6 +33,8 @@ class MetricType(Enum):
     KEYRANK = 0
     ACCURACY = 1
     KEYRANK_AND_ACCURACY = 2
+    CATEGORICAL_CROSS_ENTROPY = 3
+    INCREMENTAL_KEYRANK = 4
 
     def id(self):
         substrs = self.name.split("_")
