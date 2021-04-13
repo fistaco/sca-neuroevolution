@@ -17,7 +17,7 @@ def plot_gens_vs_fitness(experiment_name, fitnesses_per_gen):
     plt.xlabel("Generations")
     plt.ylabel("Fitness")
     plt.plot(np.arange(len(fitnesses_per_gen)), fitnesses_per_gen)
-    plt.ylim(-1, 180)
+    # plt.ylim(-1, 180)
     plt.grid(True)
     plt.savefig(f"./fig/{experiment_name}_gens_vs_fitness.png")
     plt.clf()
@@ -48,4 +48,23 @@ def plot_n_traces_vs_key_rank(experiment_name, *key_rankss, labels=None):
         plt.legend(labels)
 
     plt.savefig(f"./fig/{experiment_name}_traces_vs_keyrank.png")
+    plt.clf()
+
+
+def plot_var_vs_key_rank(var_values, key_ranks, result_category):
+    var_name = result_category.name.replace("_", " ").capitalize()
+
+    uniq_vals = np.unique(var_values)
+    n = len(uniq_vals)
+    mean_key_ranks = [np.mean(key_ranks[i:i+10]) for i in range(n)]
+    yerr = [np.std(key_ranks[i:i+10]) for i in range(n)]
+
+    plt.title(f"{var_name} ~ key rank")
+    plt.xlabel(var_name)
+    plt.ylabel("Key rank")
+    plt.grid(True)
+
+    plt.errorbar(uniq_vals, mean_key_ranks, yerr)
+
+    plt.savefig(f"./fig/{result_category.name.lower()}-vs-keyrank.png")
     plt.clf()
