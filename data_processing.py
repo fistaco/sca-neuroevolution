@@ -142,6 +142,35 @@ def shuffle_data(*data_sets):
     return tup
 
 
+def balanced_sample(n_samples, x, y, n_classes=256, shuffle=False):
+    """
+    Obtains a balanced sample of a given size from sets x and y according to
+    the first indices with occurrences of unique values in set y.
+    """
+    assert n_samples % n_classes == 0, "#samples is not a multiple of #classes"
+
+    idxs = np.zeros(n_samples, dtype=np.int32)
+    n_samples_per_class = n_samples//n_classes
+    uniq, uidxs, counts = np.unique(y, return_index=True, return_counts=True)
+
+    assert n_samples_per_class < counts.min(), "Too few unique samples"
+
+    # Repeatedly add, mask, and rediscover known indices of unique values
+    y_m = np.ma.array(y, mask=False)
+    for i in range(n_samples_per_class):
+        start, end = i*n_classes, (i + 1)*n_classes
+        idxs[start:end] = uidxs
+        y_m[uidxs] = np.ma.masked
+
+        uidxs = np.unique(y_m, return_index=True)[1][:-1]  # Ignore mask at -1
+
+    x_res, y_res = x[idxs], y[idxs]
+    if shuffle:
+        x_res, y_res = shuffle_data(x_res, y_res)
+
+    return (x_res, y_res)
+
+
 def train_test_split(x, y, train_proportion):
     """
     Splits data sets x and y into train and test sets according to the given
