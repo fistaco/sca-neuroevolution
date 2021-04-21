@@ -189,7 +189,7 @@ class GeneticAlgorithm:
             if not indiv.avg_parent_fitness:
                 indiv.avg_parent_fitness = fitness
 
-    def roulette_wheel_selection(self):
+    def roulette_wheel_selection(self, n_elites=1):
         """
         Selects potentially strong individuals by assigning each of them a
         selection probability that scales with their fitness. This is also
@@ -218,8 +218,12 @@ class GeneticAlgorithm:
             cumulative_prob += inverted_fitnesses[i] / inv_fitness_sum
             cumulative_select_probs[i] = cumulative_prob
 
+        # Lock in the top n slots with the top n individuals
+        top_n_idxs = np.argsort(self.fitnesses)[:n_elites]
+        new_population[:n_elites] = self.population[top_n_idxs]
+
         # Build the new population by "spinning the wheel" repeatedly
-        for i in range(self.pop_size):
+        for i in range(n_elites, self.pop_size):
             idx = cumulative_select_probs.searchsorted(np.random.uniform())
             new_population[i] = self.population[idx].clone()
 
@@ -254,7 +258,7 @@ class GeneticAlgorithm:
         for i in range(self.pop_size):
             parent0 = self.population[i]
 
-            if np.random.uniform() < 0.5:
+            if np.random.uniform() < self.crossover_rate:
                 parent1 = np.random.choice(self.population[:self.pop_size])
                 offspring[i] = parent0.crossover(parent1, self.apply_fi)
             else:
