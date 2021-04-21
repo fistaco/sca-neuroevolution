@@ -346,7 +346,8 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
             nn,
             2,
             experiment_name,
-            atk_data=(x_test, y_test, true_atk_subkey, ptexts_test)
+            atk_data=(x_test, y_test, true_atk_subkey, ptexts_test),
+            parallelise=parallelise
         )
 
         # Evaluate the best network's performance on the test set
@@ -358,7 +359,7 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
     return ga_results
 
 
-def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False):
+def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False, apply_fi=True):  # TODO: Remove apply_fi arg
     (x_train, y_train, x_atk, y_atk, train_meta, atk_meta) = \
         load_ascad_data(load_metadata=True, remote_loc=remote_loc)
     original_input_shape = (700, 1)
@@ -387,16 +388,16 @@ def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False):
     nn = NN_LOAD_FUNC()
     # nn = load_small_mlp_ascad()
 
-    pop_size = 25
-    atk_set_size = 64
-    select_fun = "tournament"
+    pop_size = 60
+    atk_set_size = 5120
+    select_fun = "roulette_wheel"
     execution_func = run_ga if not averaged else averaged_ga_experiment
     execution_func(
-        max_gens=25,
+        max_gens=1000,
         pop_size=pop_size,
         mut_power=0.03,
         mut_rate=0.04,
-        crossover_rate=0.5,
+        crossover_rate=0.0,
         mut_power_decay_rate=0.99,
         truncation_proportion=0.4,
         atk_set_size=atk_set_size,
@@ -411,10 +412,10 @@ def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False):
         true_atk_subkey=target_atk_subkey,
         subkey_idx=subkey_idx,
         parallelise=not remote_loc,
-        apply_fi=True,  # TODO: Check if FI is applied correctly, i.e. with cascading effect
+        apply_fi=apply_fi,  # TODO: Check if FI is applied correctly, i.e. with cascading effect -> write small unit test
         select_fun=select_fun,
-        metric_type=MetricType.INCREMENTAL_KEYRANK,
-        experiment_name=gen_experiment_name(pop_size, atk_set_size, select_fun)
+        metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
+        experiment_name=gen_experiment_name(pop_size, atk_set_size, select_fun) + f"_no-shuf_{'fi' if apply_fi else 'no-fi'}"  # TODO: Remove weird exp name modifiers
     )
 
 
@@ -683,6 +684,13 @@ def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
     
     return mean_ranks
 
+
+def test_fitness_function_consistency():
+    """
+    Verifies whether the GA's fitness function rewards well-performing networks
+    correctly and proportionately. 
+    """
+    pass
 
 def compute_memory_requirements(pop_sizes, atk_set_sizes):
     """
