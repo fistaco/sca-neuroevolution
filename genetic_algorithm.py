@@ -1,5 +1,5 @@
 import multiprocessing as mp
-mp.set_start_method("spawn", force=True)
+# mp.set_start_method("spawn", force=True)
 import os
 import pickle
 import random as rand
@@ -8,7 +8,7 @@ from copy import deepcopy
 import numpy as np
 import tensorflow as tf
 
-from data_processing import sample_data
+from data_processing import sample_data, balanced_sample
 from helpers import (exec_sca, compute_fitness, calc_max_fitness,
                      calc_min_fitness)
 from metrics import MetricType
@@ -53,7 +53,8 @@ class GeneticAlgorithm:
         self.best_fitness_per_gen = np.empty(max_gens, dtype=dtype)
 
         # Parallelisation variables
-        pool_size = round(min(self.pop_size*2, mp.cpu_count()*0.5))
+        pool_size = 8
+        # pool_size = round(min(self.pop_size*2, mp.cpu_count()*0.75))
         # pool_size = min(self.pop_size*2, len(os.sched_getaffinity(0)))
         if self.parallelise:
             self.pool = mp.Pool(pool_size)
@@ -69,13 +70,14 @@ class GeneticAlgorithm:
         if self.parallelise:
             self.pool.close()
 
-    def run(self, nn, x_atk_full, y_atk_full, ptexts, true_subkey, subkey_i=2):
+    def run(self, nn, x_atk_full, y_atk_full, ptexts, true_subkey, subkey_i=2,
+            shuffle_traces=True):  # TODO: Remove shuffle_traces arg
         """
         Runs the genetic algorithm with the parameters it was constructed with
         and returns the best found individual.
         """
-        if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
-            y_atk_full = tf.keras.utils.to_categorical(y_atk_full, 256)
+        # if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
+        #     y_atk_full = tf.keras.utils.to_categorical(y_atk_full, 256)
 
         self.initialise_population(nn)
 
@@ -85,13 +87,15 @@ class GeneticAlgorithm:
         best_individual = None
 
         while gen < self.max_gens and best_fitness > self.min_fitness:
-            # Randomly sample the attack set
-            (x_atk, y_atk) = \
-                sample_data(self.atk_set_size, x_atk_full, y_atk_full)
+            # Obtain a balanced random sample from the attack set
+            (x_atk, y_atk, pt_atk) = balanced_sample(
+                self.atk_set_size, x_atk_full, y_atk_full, ptexts, shuffle=True  # TODO: Always set shuffle to true once it's confirmed that it works as intended
+            )
+            if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
+                y_atk = tf.keras.utils.to_categorical(y_atk, 256)
 
             # Evaluate the fitness of each individual
-            print("Evaluating fitness values...")
-            self.evaluate_fitness(x_atk, y_atk, ptexts, true_subkey, subkey_i)
+            self.evaluate_fitness(x_atk, y_atk, pt_atk, true_subkey, subkey_i)
             if self.apply_fi:
                 self.adjust_fitnesses()
 
@@ -100,10 +104,8 @@ class GeneticAlgorithm:
             best_fitness = self.fitnesses[best_idx]
             best_individual = self.population[best_idx]
 
-            print("Selecting individuals...")
             # Rest of GA main loop, i.e. selection & offspring production
             self.population[:self.pop_size] = self.selection_method()  # TODO: Add truncation selection?
-            print("Producing offspring...")
             self.population[self.pop_size:] = self.produce_offpsring()
 
             # Track useful information
