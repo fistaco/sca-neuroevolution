@@ -161,6 +161,7 @@ def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
         kr0_n_traces = first_zero_value_idx(key_ranks, set_size)/(set_size - 1)
         kr_10pct = min(key_ranks[round(set_size*0.1) - 1], 128)/128
         kr_50pct = min(key_ranks[round(set_size*0.5) - 1], 128)/128
+        print(f"fitness components: %traces={kr0_n_traces}, kr10%={kr_10pct}, kr50%={kr_50pct} -> total {kr0_n_traces + kr_10pct + 0.5*kr_50pct}")  # TODO: Remove after debugging
 
         return kr0_n_traces + kr_10pct + 0.5*kr_50pct
     else:
@@ -203,6 +204,7 @@ def subkey_pred_logprobs(label_pred_probs, ptexts, subkey_idx=2, masks=None):
             subkey = label_to_subkey(pt, label)
 
             # Avoid computing np.log(0), which returns -inf
+            # Note: ASCAD devs solve this by defaulting to min(pred_probs)**2
             logprob = np.log(label_pred_prob) if label_pred_prob > 0 else 0
             subkey_logprobs[subkey] += logprob
     
@@ -305,6 +307,9 @@ def gen_ga_grid_search_arg_lists():
     """
     Returns a list of lists, where each inner list contains arguments for a
     single grid search run for the weight evolution GA experiments.
+
+    These argument combinations result in 486 configurations, each of which
+    would likely result in a runtime below 4 hours on the TUD HPC cluster.
     """
     # Total amount of experiments: 486
     pop_sizes = [25, 50, 75]  # 3 values
@@ -315,6 +320,34 @@ def gen_ga_grid_search_arg_lists():
     atk_set_sizes = [16, 64, 256]  # 3 values
     selection_methods = ["tournament", "roulette_wheel"]  # 2 values
     metrics = [MetricType.KEYRANK_AND_ACCURACY]  # 1 value
+
+    argss = [
+        tup for tup in itertools.product(
+            pop_sizes, mut_pows, mut_rates, mut_pow_dec_rates,
+            fi_dec_rates, atk_set_sizes, selection_methods, metrics
+        )
+    ]
+
+    return argss
+
+
+def gen_large_ga_grid_search_arg_lists():
+    """
+    Returns a list of lists, where each inner list contains arguments for a
+    single grid search run for the weight evolution GA experiments.
+
+    These argument combinations result in 486 configurations, many of which
+    would likely result in a runtime above 4 hours on the TUD HPC cluster.
+    """
+    # Total amount of experiments: 486
+    pop_sizes = [50, 75, 100]  # 3 values
+    mut_pows = [0.01, 0.03, 0.05]  # 3 values
+    mut_rates = [0.01, 0.04, 0.07]  # 3 values
+    mut_pow_dec_rates = [0.99, 0.999, 1.0]  # 3 values
+    fi_dec_rates = [0.0, 0.2, 0.4]  # 1 value
+    atk_set_sizes = [256, 512, 1024, 2048]  # 3 values
+    selection_methods = ["tournament"]  # 1 value
+    metrics = [MetricType.INCREMENTAL_KEYRANK]  # 1 value
 
     argss = [
         tup for tup in itertools.product(
