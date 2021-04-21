@@ -99,12 +99,13 @@ def build_small_mlp_ascad(save=False):
     return mlp
 
 
-def load_small_mlp_ascad():
+def load_small_mlp_ascad(trained=False):
     """
-    Loads an untrained MLP with an architecture proposed by Wouters et al.
-    directly from an HDF5 file and returns it.
+    Loads an MLP with an architecture proposed by Wouters et al. directly from
+    an HDF5 file and returns it.
     """
-    path = "./trained_models/efficient_mlp_ascad_model_6kw.h5"
+    path = "./trained_models/efficient_mlp_ascad_model_6kw.h5" if not trained \
+        else "./trained_models/official_ascad_mlp_trained.hdf5"
     return keras.models.load_model(path, compile=False)
 
 
