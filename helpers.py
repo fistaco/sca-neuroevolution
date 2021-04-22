@@ -121,9 +121,6 @@ def compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey,
     Executes a side-channel attack on the given traces using the given neural
     network and uses the obtained prediction probabilities to compute the key
     rank and/or accuracy.
-
-    Returns fitness as keyrank, (1 - accuracy)*100, or (keyrank - accuracy)
-    depending on the given metric type.
     """
     y_pred_probs = nn.predict(x_atk)
     return evaluate_preds(
@@ -137,10 +134,6 @@ def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
     """
     Evaluates the given predictions using the method indicated by the given
     metric type and returns the result.
-
-    Arguments:
-        preds: A 2-dimensional array, where the i-th array is a list of
-        prediction probabilities for the i-th trace.
     """
     if metric_type == MetricType.KEYRANK:
         subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx)
@@ -156,14 +149,17 @@ def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
     elif metric_type == MetricType.INCREMENTAL_KEYRANK:
         # f = (n_traces_for_kr_zero + kr_10_pct + 0.5*kr_50_pct)
         key_ranks = compute_fold_keyranks(
-            7, preds, ptexts, subkey_idx, set_size, true_subkey, False)
+            7, preds, ptexts, subkey_idx, set_size, true_subkey, verbose=False)
 
         kr0_n_traces = first_zero_value_idx(key_ranks, set_size)/(set_size - 1)
         kr_10pct = min(key_ranks[round(set_size*0.1) - 1], 128)/128
         kr_50pct = min(key_ranks[round(set_size*0.5) - 1], 128)/128
-        print(f"fitness components: %traces={kr0_n_traces}, kr10%={kr_10pct}, kr50%={kr_50pct} -> total {kr0_n_traces + kr_10pct + 0.5*kr_50pct}")  # TODO: Remove after debugging
 
         return kr0_n_traces + kr_10pct + 0.5*kr_50pct
+    elif metric_type == MetricType.KEYRANK_PROGRESS:
+        key_ranks = compute_fold_keyranks(
+            7, preds, ptexts, subkey_idx, set_size, true_subkey, verbose=False)
+        return np.mean(np.diff(key_ranks))
     else:
         print("Encountered invalid metric type. Quitting.")
         exit(1)
@@ -205,7 +201,7 @@ def subkey_pred_logprobs(label_pred_probs, ptexts, subkey_idx=2, masks=None):
 
             # Avoid computing np.log(0), which returns -inf
             # Note: ASCAD devs solve this by defaulting to min(pred_probs)**2
-            logprob = np.log(label_pred_prob) if label_pred_prob > 0 else 0
+            logprob = np.log(label_pred_prob) if label_pred_prob > 0 else 0  # TODO: Change to ASCAD implementation
             subkey_logprobs[subkey] += logprob
     
     return subkey_logprobs
