@@ -109,6 +109,24 @@ def load_small_mlp_ascad(trained=False):
     return keras.models.load_model(path, compile=False)
 
 
+def small_mlp_cw(build=False):
+    """
+    Builds or loads and returns an MLP for the ChipWhisperer data set.
+    """
+    if build:
+        mlp = keras.Sequential([
+            keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(5000,1)),
+            keras.layers.Flatten(),
+            keras.layers.Dense(2, activation=tf.nn.selu),
+            keras.layers.Dense(256, activation=tf.nn.softmax)
+        ])
+        mlp.save("./trained_models/cw_mlp_untrained.h5")
+    else:
+        return keras.models.load_model("./trained_models/cw_mlp_untrained.h5")
+
+    return mlp
+
+
 def build_small_cnn_ascad_trainable_conv():
     """
     Builds and returns a CNN where only the CONV layer is trainable. Note that
