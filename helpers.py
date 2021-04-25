@@ -159,7 +159,7 @@ def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
     elif metric_type == MetricType.KEYRANK_PROGRESS:
         key_ranks = compute_fold_keyranks(
             7, preds, ptexts, subkey_idx, set_size, true_subkey, verbose=False)
-        return np.mean(np.diff(key_ranks))
+        return np.mean(np.diff(key_ranks.astype(np.int16)))
     else:
         print("Encountered invalid metric type. Quitting.")
         exit(1)
