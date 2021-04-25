@@ -16,6 +16,7 @@ from models import (build_small_cnn_ascad, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
                     NN_LOAD_FUNC)
 from nn_genome import NeuralNetworkGenome
+from params import *
 
 
 class GeneticAlgorithm:
@@ -43,7 +44,7 @@ class GeneticAlgorithm:
         # Precompute fitness-related variables
         self.max_fitness = max_base_f = calc_max_fitness(metric_type)
         max_unscaled_adj_fitness = adjust_fitness(max_base_f, max_base_f, 0.2)
-        self.fitness_scaling = (1/max_unscaled_adj_fitness) * max_base_f
+        # self.fitness_scaling = (1/max_unscaled_adj_fitness) * max_base_f
         self.min_fitness = calc_min_fitness(metric_type)
 
         # Store fitness-related information in arrays of the appropriate dtype
@@ -91,6 +92,8 @@ class GeneticAlgorithm:
             (x_atk, y_atk, pt_atk) = balanced_sample(
                 self.atk_set_size, x_atk_full, y_atk_full, ptexts, shuffle=True  # TODO: Always set shuffle to true once it's confirmed that it works as intended
             )
+            # Notes: 5k profiling traces may be insufficient
+            # Note: try computing fitness over 100 folds
             if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
                 y_atk = tf.keras.utils.to_categorical(y_atk, 256)
 
@@ -132,7 +135,6 @@ class GeneticAlgorithm:
         for i in range(len(self.population)):
             self.population[i] = NeuralNetworkGenome(weights, self.max_fitness)
             self.population[i].random_weight_init()
-            # TODO: parallelise?
 
     def evaluate_fitness(self, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
         """
@@ -244,10 +246,28 @@ class GeneticAlgorithm:
                 indiv = np.random.choice(self.population)
                 if indiv.fitness < winner.fitness:
                     winner = indiv.clone()
-            
+
             new_population[i] = winner.clone()  # TODO: Implement version without replacement
-        
+
         return new_population
+
+
+    def unbiased_tournament_selection(self, t_size=3):
+        """
+        Selects potentially strong individuals by performing fitness-based
+        tournaments where each individual participates in exactly `t_size`
+        tournaments.
+        """
+        # Preprocess tournament groups by creating `t_size` index permutations
+        # TODO: Implement this for selection of half the population somehow
+        idx_permutations = np.zeros((t_size, self.pop_size), dtype=np.uint16)
+
+        new_population = np.empty(self.pop_size, dtype=object)
+        for i in range(self.pop_size):
+            pass
+
+        return new_population
+
 
     def produce_offpsring(self):
         """
@@ -337,3 +357,53 @@ def adjust_fitness(fitness, avg_parent_fitness, fi_decay, scaling=0.5):
     return scaling*(
         fitness + avg_parent_fitness * (1 - fi_decay)
     )
+
+
+def train_nn_with_ga(
+        nn,
+        x_train,
+        y_train,
+        pt_train,
+        k_train,
+        subkey_idx,
+        max_gens=MAX_GENERATIONS,
+        pop_size=POPULATION_SIZE,
+        mut_power=MUTATION_POWER,
+        mut_rate=MUTATION_RATE,
+        crossover_rate=CROSSOVER_RATE,
+        mut_power_decay_rate=MUTATION_POWER_DECAY,
+        truncation_proportion=TRUNCATION_PROPORTION,
+        atk_set_size=ATTACK_SET_SIZE,
+        parallelise=False,
+        apply_fi=False,
+        select_fn=SELECTION_FUNCTION,
+        metric_type=METRIC_TYPE
+    ):
+    """
+    Trains the weights of the given NN on the given data set by running it
+    through the genetic algorithm with  the given parameters.
+
+    Returns:
+        The trained NN.
+    """
+    weights = nn.get_weights()
+    ga = GeneticAlgorithm(
+        max_gens,
+        pop_size,
+        mut_power,
+        mut_rate,
+        crossover_rate,
+        mut_power_decay_rate,
+        truncation_proportion,
+        atk_set_size,
+        parallelise,
+        apply_fi,
+        select_fun,
+        metric_type
+    )
+
+    # Obtain the best network resulting from the GA
+    best_indiv = ga.run(nn, x_train, y_train, pt_train, k_train, subkey_idx)
+    nn.set_weights(best_indiv.weights)
+
+    return nn
