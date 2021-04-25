@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+from matplotlib import cm
 import numpy as np
 
 
@@ -52,6 +53,10 @@ def plot_n_traces_vs_key_rank(experiment_name, *key_rankss, labels=None):
 
 
 def plot_var_vs_key_rank(var_values, key_ranks, result_category):
+    """
+    Plots a given list of variable values against a given list of key ranks,
+    while labelling the variable according to a given result category.
+    """
     var_name = result_category.name.replace("_", " ").capitalize()
 
     uniq_vals = np.unique(var_values)
@@ -68,3 +73,32 @@ def plot_var_vs_key_rank(var_values, key_ranks, result_category):
 
     plt.savefig(f"./fig/{result_category.name.lower()}-vs-keyrank.png")
     plt.clf()
+
+
+def plot_2d(xs, ys, x_label, y_label, title):
+    plt.title(title)
+    plt.xlabel(x_label))
+    plt.ylabel(y_label)
+    plt.plot(xs, ys)
+    plt.grid(True)
+    plt.savefig(f"./fig/{title}.png")
+    plt.clf()
+
+
+def plot_3d(xs, ys, zs, x_label, y_label, z_label, title):
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    plt.title(title)
+    x_mg, y_mg = np.meshgrid(xs, ys)
+    # ax.plot_wireframe(x_mg, y_mg, zs)
+    surf = ax.plot_surface(x_mg, y_mg, zs, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+    fig.colorbar(surf, shrink=0.5, aspect=5)
+
+    ax.set_xticks(xs)
+    ax.set_yticks(ys)
+    ax.set_xlabel(x_label)
+    ax.set_ylabel(y_label)
+    ax.set_zlabel(z_label)
+
+    plt.savefig(f"./fig/{title}.png")
+    plt.close()
