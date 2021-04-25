@@ -77,7 +77,7 @@ def plot_var_vs_key_rank(var_values, key_ranks, result_category):
 
 def plot_2d(xs, ys, x_label, y_label, title):
     plt.title(title)
-    plt.xlabel(x_label))
+    plt.xlabel(x_label)
     plt.ylabel(y_label)
     plt.plot(xs, ys)
     plt.grid(True)
