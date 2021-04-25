@@ -23,8 +23,8 @@ class GeneticAlgorithm:
     def __init__(self, max_gens, pop_size, mut_power, mut_rate, crossover_rate,
                  mut_power_decay_rate, truncation_proportion, atk_set_size,
                  parallelise=False, apply_fitness_inheritance=False,
-                 select_fun="roulette_wheel", metric_type=MetricType.KEYRANK,
-                 elitism=False):
+                 select_fun="tournament", metric_type=MetricType.KEYRANK,
+                 n_atk_folds=1):
         self.max_gens = max_gens
         self.pop_size = pop_size
         self.mut_power = mut_power
@@ -33,6 +33,7 @@ class GeneticAlgorithm:
         self.mut_power_decay_rate = mut_power_decay_rate
         self.truncation_proportion = truncation_proportion
         self.atk_set_size = atk_set_size
+        self.n_atk_folds = n_atk_folds
         self.parallelise = parallelise
         self.apply_fi = apply_fitness_inheritance
         self.metric_type = metric_type
@@ -54,8 +55,7 @@ class GeneticAlgorithm:
         self.best_fitness_per_gen = np.empty(max_gens, dtype=dtype)
 
         # Parallelisation variables
-        pool_size = 8
-        # pool_size = round(min(self.pop_size*2, mp.cpu_count()*0.75))
+        pool_size = round(min(self.pop_size*2, mp.cpu_count()*0.75))
         # pool_size = min(self.pop_size*2, len(os.sched_getaffinity(0)))
         if self.parallelise:
             self.pool = mp.Pool(pool_size)
@@ -72,11 +72,14 @@ class GeneticAlgorithm:
             self.pool.close()
 
     def run(self, nn, x_atk_full, y_atk_full, ptexts, true_subkey, subkey_i=2,
-            shuffle_traces=True):  # TODO: Remove shuffle_traces arg
+            shuffle_traces=True):
         """
         Runs the genetic algorithm with the parameters it was constructed with
         and returns the best found individual.
         """
+        # Ensure we're not attacking multiple unshuffled folds
+        assert self.n_atk_folds == 1 or shuffle_traces, "Using static folds"
+
         # if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
         #     y_atk_full = tf.keras.utils.to_categorical(y_atk_full, 256)
 
@@ -88,17 +91,20 @@ class GeneticAlgorithm:
         best_individual = None
 
         while gen < self.max_gens and best_fitness > self.min_fitness:
-            # Obtain a balanced random sample from the attack set
-            (x_atk, y_atk, pt_atk) = balanced_sample(
-                self.atk_set_size, x_atk_full, y_atk_full, ptexts, shuffle=True  # TODO: Always set shuffle to true once it's confirmed that it works as intended
-            )
-            # Notes: 5k profiling traces may be insufficient
+            # Obtain balanced, optionally random samples from the attack set
+            atk_sets = [
+                balanced_sample(self.atk_set_size, x_atk_full, y_atk_full,
+                                ptexts, shuffle=shuffle_traces)
+                for _ in range(self.n_atk_folds)
+            ]
+
+            # Note: 5k profiling traces may be insufficient
             # Note: try computing fitness over 100 folds
             if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
                 y_atk = tf.keras.utils.to_categorical(y_atk, 256)
 
             # Evaluate the fitness of each individual
-            self.evaluate_fitness(x_atk, y_atk, pt_atk, true_subkey, subkey_i)
+            self.evaluate_fitness(atk_sets, true_subkey, subkey_i)
             if self.apply_fi:
                 self.adjust_fitnesses()
 
@@ -136,7 +142,7 @@ class GeneticAlgorithm:
             self.population[i] = NeuralNetworkGenome(weights, self.max_fitness)
             self.population[i].random_weight_init()
 
-    def evaluate_fitness(self, x_atk, y_atk, ptexts, true_subkey, subkey_idx):
+    def evaluate_fitness(self, atk_sets, true_subkey, subkey_idx):
         """
         Computes and sets the current fitness value of each individual in the
         population and list of offspring.
@@ -145,14 +151,13 @@ class GeneticAlgorithm:
             # Set up a tuple of arguments for each concurrent process
             argss = [
                 (
-                    self.population[i].weights, x_atk, y_atk, ptexts,
-                    true_subkey, subkey_idx, self.metric_type,
-                    self.atk_set_size
+                    self.population[i].weights, atk_sets, true_subkey,
+                    subkey_idx, self.metric_type, self.atk_set_size
                 )
                 for i in range(len(self.population))
             ]
             # Run fitness evaluations in parallel
-            fitnesses = self.pool.starmap(evaluate_fitness, argss)
+            fitnesses = self.pool.starmap(multifold_fitness_eval, argss)
 
             # Update the individuals' fitness values
             for i in range(len(self.population)):
@@ -160,7 +165,7 @@ class GeneticAlgorithm:
         else:
             # Run fitness evaluations sequentially
             for (i, indiv) in enumerate(self.population):
-                self.fitnesses[i] = indiv.fitness = evaluate_fitness(
+                indiv.fitness = self.fitnesses[i] = multifold_fitness_eval(
                     indiv.weights, x_atk, y_atk, ptexts, true_subkey,
                     subkey_idx, self.metric_type, self.atk_set_size
                 )
@@ -345,6 +350,27 @@ def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx,
     )
 
 
+def multifold_fitness_eval(weights, atk_sets, true_subkey, subkey_idx,
+                           metric_type, atk_set_size):
+    """
+    Evaluates the fitness of an individual by using its weights to construct a
+    new NN, which is used to execute an SCA on the given data.
+
+    Returns:
+        The key rank obtained with the SCA.
+    """
+    nn = NN_LOAD_FUNC()
+    nn.set_weights(weights)
+
+    return np.mean([
+        compute_fitness(
+            nn, atk_set[0], atk_set[1], atk_set[2], metric_type, true_subkey,
+            atk_set_size, subkey_idx
+        )
+        for atk_set in atk_sets
+    ])
+
+
 def adjust_fitness(fitness, avg_parent_fitness, fi_decay, scaling=0.5):
     """
     Adjusts and returns the given individual's fitness based on itself, its
@@ -377,7 +403,8 @@ def train_nn_with_ga(
         parallelise=False,
         apply_fi=False,
         select_fn=SELECTION_FUNCTION,
-        metric_type=METRIC_TYPE
+        metric_type=METRIC_TYPE,
+        shuffle_traces=True
     ):
     """
     Trains the weights of the given NN on the given data set by running it
@@ -403,7 +430,10 @@ def train_nn_with_ga(
     )
 
     # Obtain the best network resulting from the GA
-    best_indiv = ga.run(nn, x_train, y_train, pt_train, k_train, subkey_idx)
+    best_indiv = ga.run(
+        nn, x_train, y_train, pt_train, k_train, subkey_idx,
+        shuffle_traces=shuffle_traces
+    )
     nn.set_weights(best_indiv.weights)
 
     return nn
