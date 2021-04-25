@@ -10,8 +10,10 @@ from tensorflow import keras
 from constants import METRIC_TYPE_MAP, SELECT_FUNCTION_MAP
 from data_processing import (load_ascad_atk_variables, load_ascad_data,
                              load_prepared_ascad_vars, sample_data,
-                             scale_inputs, shuffle_data)
-from genetic_algorithm import GeneticAlgorithm
+                             scale_inputs, shuffle_data, balanced_sample,
+                             load_chipwhisperer_data)
+from genetic_algorithm import (GeneticAlgorithm, evaluate_fitness,
+                               train_nn_with_ga)
 from helpers import (compute_fold_keyranks, compute_mem_req,
                      compute_mem_req_from_known_vals, exec_sca,
                      gen_experiment_name, gen_extended_exp_name,
@@ -23,9 +25,11 @@ from models import (NN_LOAD_FUNC, build_small_cnn_ascad,
                     build_small_mlp_ascad,
                     build_small_mlp_ascad_trainable_first_layer,
                     load_nn_from_experiment_results, load_small_cnn_ascad,
-                    load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad)
+                    load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
+                    small_mlp_cw)
+from nn_genome import NeuralNetworkGenome
 from plotting import (plot_gens_vs_fitness, plot_n_traces_vs_key_rank,
-                      plot_var_vs_key_rank)
+                      plot_var_vs_key_rank, plot_3d)
 from result_processing import ResultCategory, filter_df
 
 
@@ -359,7 +363,8 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
     return ga_results
 
 
-def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False, apply_fi=True):  # TODO: Remove apply_fi arg
+def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False,
+                         apply_fi=True, parallelise=False):
     (x_train, y_train, x_atk, y_atk, train_meta, atk_meta) = \
         load_ascad_data(load_metadata=True, remote_loc=remote_loc)
     original_input_shape = (700, 1)
@@ -386,14 +391,13 @@ def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False, apply_
 
     # Train the CNN by running it through the GA
     nn = NN_LOAD_FUNC()
-    # nn = load_small_mlp_ascad()
 
-    pop_size = 60
+    pop_size = 50
     atk_set_size = 5120
     select_fun = "roulette_wheel"
     execution_func = run_ga if not averaged else averaged_ga_experiment
     execution_func(
-        max_gens=1000,
+        max_gens=5,
         pop_size=pop_size,
         mut_power=0.03,
         mut_rate=0.04,
@@ -411,10 +415,10 @@ def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False, apply_
         true_validation_subkey=target_train_subkey,
         true_atk_subkey=target_atk_subkey,
         subkey_idx=subkey_idx,
-        parallelise=not remote_loc,
+        parallelise=parallelise,
         apply_fi=apply_fi,  # TODO: Check if FI is applied correctly, i.e. with cascading effect -> write small unit test
         select_fun=select_fun,
-        metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
+        metric_type=MetricType.INCREMENTAL_KEYRANK,
         experiment_name=gen_experiment_name(pop_size, atk_set_size, select_fun) + f"_no-shuf_{'fi' if apply_fi else 'no-fi'}"  # TODO: Remove weird exp name modifiers
     )
 
@@ -662,7 +666,37 @@ def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=True):
         atk_data=(x_atk, y_atk, target_subkey, atk_ptexts),
         parallelise=False
     )
-    
+
+
+def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True):
+    (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
+        load_chipwhisperer_data(n_train=8000, subkey_idx=subkey_idx)
+
+    # Load and train MLP
+    nn = small_mlp_cw(build=False)
+    if train_with_ga:
+        nn = train_nn_with_ga(nn, x_train, y_train, pt_train, k, subkey_idx)
+    else:
+        y_train = keras.utils.to_categorical(y_train)
+        n_epochs = 50
+        batch_size = 50
+        loss_fn = tf.keras.losses.CategoricalCrossentropy()
+        optimizer = tf.keras.optimizers.Adam(learning_rate=5e-3)
+        nn.compile(optimizer, loss_fn)
+        history = nn.fit(x_train, y_train, batch_size, n_epochs)
+    if save:
+        suffix = "_ga" if train_with_ga else "_sgd"
+        nn.save(f"./trained_models/cw_mlp_trained{suffix}.h5")
+
+    kfold_ascad_atk_with_varying_size(
+        30,
+        nn,
+        subkey_idx=subkey_idx,
+        experiment_name="chipwhisperer_mlp_test",
+        atk_data=(x_atk, y_atk, k, pt_atk),
+        parallelise=False
+    )
+
 
 def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
     atk_data=None, parallelise=False):
@@ -685,12 +719,113 @@ def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
     return mean_ranks
 
 
-def test_fitness_function_consistency():
+def test_fitness_function_consistency(nn_quality="medium"):
     """
-    Verifies whether the GA's fitness function rewards well-performing networks
-    correctly and proportionately. 
+    Determines the consistency of a several metric types by computing fitness
+    evaluation standard deviations with different amounts of traces and folds
+    for multiple random neural networks.
     """
-    pass
+    np.random.seed(77)
+
+    n_indivs = 10
+    # Load networks according to desired network quality
+    if nn_quality == "low":  # completely random networks
+        base_weights = NN_LOAD_FUNC().get_weights()
+        indivs = [NeuralNetworkGenome(base_weights) for _ in range(n_indivs)]
+        for indiv in indivs:
+            indiv.random_weight_init()
+    if nn_quality == "medium":  # best networks from a prior random search
+        with open("ga_weight_evo_grid_key_rank_zero_indivs.pickle", "rb") as f:
+            key_rank_zero_indivs = np.array(pickle.load(f), dtype=object)
+        with open("ga_gs_best_networks_avg_key_ranks.pickle", "rb") as f:
+            avg_key_ranks = pickle.load(f)
+        top_idxs = np.argsort(avg_key_ranks)[:n_indivs]
+        indivs = [tup[0] for tup in key_rank_zero_indivs[top_idxs]]
+        del key_rank_zero_indivs
+
+    # Load data
+    subkey_idx = 2
+    (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
+        load_prepared_ascad_vars(
+            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=False
+        )
+
+    # Set up DF
+    trace_amnts = [256, 512, 768, 1024]
+    fold_amnts = [5, 10, 15, 20]
+    metric_types = [MetricType.INCREMENTAL_KEYRANK, MetricType.KEYRANK,
+                    MetricType.KEYRANK_PROGRESS]
+    n_evals = n_indivs*len(trace_amnts)*len(fold_amnts)*len(metric_types)*10
+    df = np.zeros(n_evals, dtype=[
+        ("n_traces", np.uint16), ("n_folds", np.uint8), ("metric", MetricType),
+        ("indiv_id", np.uint8), ("fitness", np.float32)
+    ])
+
+    pool = mp.Pool(5)
+
+    # Generate data samples and evaluate individuals
+    i = 0
+    for t in trace_amnts:
+        for f in fold_amnts:
+            for _ in range(10):  # Repeat everything 10 times
+                sets = [
+                    balanced_sample(t, x_train, y_train, pt_train, 256, True)
+                    for _ in range(f)
+                ]
+
+                for m in metric_types:
+                    for (indiv_id, indiv) in enumerate(indivs):
+                        print(f"Running evaluation {i}/{n_evals - 1}.")
+                        argss = [
+                            (indiv.weights, s[0], s[1], s[2], k_train,
+                                subkey_idx, m, t)
+                            for s in sets
+                        ]
+                        fitnesses = pool.starmap(
+                            evaluate_fitness,
+                            argss
+                        )
+                        fitness = np.mean(fitnesses)
+
+                        df[i] = (t, f, m, indiv_id, fitness)
+                        i += 1
+    print("Finished.")
+
+    with open(f"fitness_consistency_eval_df_{nn_quality}.pickle", "wb") as f:
+        pickle.dump(df, f)
+
+    pool.close()
+    pool.join()
+
+    # For each m-t-f combination, store the mean of all individuals' stdevs
+    mean_stdevs = {m: { t: { f:
+        np.mean(
+            [
+                np.std(df[
+                    (df["n_traces"] == t) & (df["n_folds"] == f) & \
+                    (df["metric"] == m) & (df["indiv_id"] == i)
+                ]["fitness"])
+                for i in range(n_indivs)
+            ]
+        )
+    for f in fold_amnts} for t in trace_amnts} for m in metric_types}
+
+    with open(f"fitness_consistency_mean_stds_{nn_quality}.pickle", "wb") as f:
+        pickle.dump(mean_stdevs, f)
+
+    # # For each metric, plot n_traces & n_folds vs. mean fitness std.
+    for m in metric_types:
+        zs = np.zeros((len(trace_amnts),  len(fold_amnts)), dtype=np.float64)
+        for (i, n_traces) in enumerate(trace_amnts):
+            for (j, n_folds) in enumerate(fold_amnts):
+                zs[i, j] = mean_stdevs[m][n_traces][n_folds]
+
+        plot_3d(
+            fold_amnts, trace_amnts, zs,
+            "Folds", "Traces", "Std. dev.",
+            f"Folds & traces ~ fitness standard deviation ({m.name})"
+        )
+
 
 def compute_memory_requirements(pop_sizes, atk_set_sizes):
     """
