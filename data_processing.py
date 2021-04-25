@@ -106,10 +106,32 @@ def load_prepared_ascad_vars(subkey_idx=2, scale=True, use_mlp=False,
         y_atk, atk_ptexts, target_atk_subkey)
 
 
-def reshape_input_for_cnns(input_data):
+def load_dpav4(subkey_idx=0):
+    pass
+
+
+def load_chipwhisperer_data(n_train=8000, subkey_idx=0):
+    """
+    Loads the Chipwhisperer data set and returns it as a tuple containing
+    (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k).
+    """
+    dir_path = "./../Chipwhisperer/"
+    x = np.load(f"{dir_path}traces.npy")[:10000]
+    y = np.load(f"{dir_path}labels.npy")[:10000]
+    pt = np.load(f"{dir_path}plain.npy")[:10000]
+    k = np.load(f"{dir_path}key.npy")[0][subkey_idx]
+
+    x = reshape_nn_input(x)
+
+    n = n_train  # End index of train traces and start index of attack traces
+
+    return (x[:n], y[:n], pt[:n], x[n:], y[n:], pt[n:], k)
+
+
+def reshape_nn_input(input_data):
     """
     Converts and returns the given 2D input data so that it consists of
-    singleton arrays to make it eligible for CNNs.
+    singleton arrays to make it compatible with various NNs.
     """
     return input_data.reshape((input_data.shape[0], input_data.shape[1], 1))
 
