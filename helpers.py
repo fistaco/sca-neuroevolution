@@ -1,5 +1,6 @@
 import itertools
 import multiprocessing as mp
+import os
 import pickle
 
 import numpy as np
@@ -24,7 +25,8 @@ def exec_sca(ann_model, x_atk, y_atk, ptexts, true_subkey, subkey_idx=2):
 
 
 def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k,
-                         key_idx=2, experiment_name="", parallelise=False):
+                         key_idx=2, experiment_name="", parallelise=False,
+                         remote=False):
     """
     Calculates and returns the mean key ranks of the given list of prediction
     probability arrays, the data set's metadata, and the desired number of
@@ -37,7 +39,7 @@ def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k,
     # For both the parallel and sequential methods, the core idea is to reuse
     # subsets of the predictions to simulate attacks over different folds
     if parallelise:
-        pool = mp.Pool(6)
+        pool = mp.Pool(get_pool_size(remote))
 
         # Compute key ranks for each trace amount in parallel
         shuffled = [shuffle_data(y_pred_probs, ptexts) for i in range(k)]
@@ -230,7 +232,7 @@ def compute_mem_req(pop_size, nn, atk_set_size):
     return max_indivs*(ws_bytes*3 + atk_set_bytes)
 
 
-def compute_mem_req_from_known_vals(pop_size, data_set_size, scaling=False):
+def compute_mem_req_from_known_vals(pop_size, data_set_size, scaling=True):
     """
     Approximates the amount of memory that running a GA instance will require
     based on the population size and the amount of network weights. This is
@@ -244,6 +246,18 @@ def compute_mem_req_from_known_vals(pop_size, data_set_size, scaling=False):
         The approximate RAM requirement in GB.
     """
     return 2*pop_size*(0.4 + data_set_size*0.000003*(8 if scaling else 1))
+
+
+def compute_mem_req_for_pop(pop_size, data_set_size, n_trace_points,
+                            n_indiv_weights, scaling=True):
+    trace_size = n_trace_points*(8 if scaling else 1)
+    label_size = 1  # Assumes full list of labels is only for 1 subkey
+    pt_size = 16  # 16 bytes per full plaintext
+    k_size = 8  # Only pass the required key byte for a single subkey index
+    indiv_size = 4*n_indiv_weights
+
+    data_size = data_set_size*(trace_size + label_size + pt_size) + k_size
+    return (2*pop_size*(data_size + indiv_size))/1e6  # Return in MB
 
 
 def load_model_weights_from_ga_results(experiment_name):
@@ -297,6 +311,15 @@ def calc_min_fitness(metric_type):
     Returns the maximum fitness based on the given metric type.
     """
     return -1 if metric_type == MetricType.KEYRANK_AND_ACCURACY else 0
+
+
+def get_pool_size(remote, pop_size=50):
+    """
+    Determines and returns the size of the multiprocessing pool based on
+    whether the application is running locally or remotely.
+    """
+    return min(pop_size*2, len(os.sched_getaffinity(0))) if remote \
+        else round(min(pop_size*2, mp.cpu_count()*0.75))
 
 
 def gen_ga_grid_search_arg_lists():
