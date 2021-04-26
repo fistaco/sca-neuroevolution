@@ -122,7 +122,8 @@ def small_mlp_cw(build=False):
         ])
         mlp.save("./trained_models/cw_mlp_untrained.h5")
     else:
-        return keras.models.load_model("./trained_models/cw_mlp_untrained.h5")
+        path = "./trained_models/cw_mlp_untrained.h5"
+        return keras.models.load_model(path, compile=False)
 
     return mlp
 
