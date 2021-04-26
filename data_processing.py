@@ -110,12 +110,13 @@ def load_dpav4(subkey_idx=0):
     pass
 
 
-def load_chipwhisperer_data(n_train=8000, subkey_idx=0):
+def load_chipwhisperer_data(n_train=8000, subkey_idx=0, remote=False):
     """
     Loads the Chipwhisperer data set and returns it as a tuple containing
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k).
     """
-    dir_path = "./../Chipwhisperer/"
+    dir_path = "./../Chipwhisperer/" if not remote else \
+        "/tudelft.net/staff-bulk/ewi/insy/CYS/spicek/fschijlen/Chipwhisperer/"
     x = np.load(f"{dir_path}traces.npy")[:10000]
     y = np.load(f"{dir_path}labels.npy")[:10000]
     pt = np.load(f"{dir_path}plain.npy")[:10000]
