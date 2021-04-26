@@ -1,6 +1,5 @@
 import multiprocessing as mp
 # mp.set_start_method("spawn", force=True)
-import os
 import pickle
 import random as rand
 from copy import deepcopy
@@ -10,7 +9,7 @@ import tensorflow as tf
 
 from data_processing import sample_data, balanced_sample
 from helpers import (exec_sca, compute_fitness, calc_max_fitness,
-                     calc_min_fitness)
+                     calc_min_fitness, get_pool_size)
 from metrics import MetricType
 from models import (build_small_cnn_ascad, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
@@ -24,7 +23,7 @@ class GeneticAlgorithm:
                  mut_power_decay_rate, truncation_proportion, atk_set_size,
                  parallelise=False, apply_fitness_inheritance=False,
                  select_fun="tournament", metric_type=MetricType.KEYRANK,
-                 n_atk_folds=1):
+                 n_atk_folds=1, remote=False):
         self.max_gens = max_gens
         self.pop_size = pop_size
         self.mut_power = mut_power
@@ -54,10 +53,10 @@ class GeneticAlgorithm:
         self.fitnesses = np.full(pop_size*2, self.max_fitness, dtype=dtype)
         self.best_fitness_per_gen = np.empty(max_gens, dtype=dtype)
 
-        # Parallelisation variables
-        pool_size = round(min(self.pop_size*2, mp.cpu_count()*0.75))
-        # pool_size = min(self.pop_size*2, len(os.sched_getaffinity(0)))
         if self.parallelise:
+            pool_size = get_pool_size(remote, pop_size=pop_size)
+            print(f"Initialising process pool with pool size = {pool_size}")
+
             self.pool = mp.Pool(pool_size)
         
         # Use a dictionary to enable simple selection method parametrisation
