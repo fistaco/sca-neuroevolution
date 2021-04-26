@@ -16,7 +16,7 @@ class NeuralNetworkGenome:
 
     def random_weight_init(self):
         """
-        Sets each weight to a random value in the range [0, 1).
+        Sets each weight to a random value in the range [-1, 1).
         """
         for i in range(len(self.weights)):  # Iterate over layers
             for j in range(self.weights[i].shape[-1]):  # Iterate over weights
