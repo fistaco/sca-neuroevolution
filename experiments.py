@@ -158,7 +158,7 @@ def ga_grid_search_find_best_network():
     data set.
     """
     # Extract best networks from results
-    with open("ga_weight_evo_grid_key_rank_zero_indivs.pickle", "rb") as f:
+    with open("res/ga_weight_evo_grid_key_rank_zero_indivs.pickle", "rb") as f:
         key_rank_zero_indivs = pickle.load(f)
     nns = np.empty(len(key_rank_zero_indivs), dtype=object)
     for i in range(len(nns)):
@@ -190,7 +190,7 @@ def ga_grid_search_find_best_network():
     pool.join()
 
     # Save intermediate results
-    with open("ga_gs_best_nns_key_ranks_per_fold.pickle", "wb") as f:
+    with open("res/ga_gs_best_nns_key_ranks_per_fold.pickle", "wb") as f:
         pickle.dump(key_ranks_per_fold, f)
 
     # Obtain the averages of the results
@@ -199,12 +199,12 @@ def ga_grid_search_find_best_network():
         for fold in range(30):
             avg_key_ranks[i] += key_ranks_per_fold[fold][i]/30
 
-    with open("ga_gs_best_networks_avg_key_ranks.pickle", "wb") as f:
+    with open("res/ga_gs_best_networks_avg_key_ranks.pickle", "wb") as f:
         pickle.dump(avg_key_ranks, f)
 
     print(f"Best avg key rank: {np.min(avg_key_ranks)}")
     best_nn_idx = np.argmin(avg_key_ranks)
-    with open("ga_gs_best_indiv.pickle", "wb") as f:
+    with open("res/ga_gs_best_indiv.pickle", "wb") as f:
         # Save as (indiv, experiment_name)
         pickle.dump(key_rank_zero_indivs[best_nn_idx], f)
 
@@ -237,7 +237,7 @@ def ga_grid_search_best_network_eval():
     the GA grid search and plots the results.
     """
     # Load best network
-    with open("ga_gs_best_indiv.pickle", "rb") as f:
+    with open("res/ga_gs_best_indiv.pickle", "rb") as f:
         # Save as (indiv, experiment_name)
         (indiv, exp_name) = pickle.load(f)
     nn = NN_LOAD_FUNC()
@@ -266,9 +266,9 @@ def ensemble_atk_with_best_grid_search_networks(top_n=5):
         load_prepared_ascad_vars(subkey_idx, True, True, False)
 
     # Load all best networks and find the top n
-    with open("ga_weight_evo_grid_key_rank_zero_indivs.pickle", "rb") as f:
+    with open("res/ga_weight_evo_grid_key_rank_zero_indivs.pickle", "rb") as f:
         key_rank_zero_indivs = pickle.load(f)
-    with open("ga_gs_best_networks_avg_key_ranks.pickle", "rb") as f:
+    with open("res/ga_gs_best_networks_avg_key_ranks.pickle", "rb") as f:
         avg_key_ranks = pickle.load(f)
     top_five_idxs = np.argsort(avg_key_ranks)[:top_n]
     nns = [NN_LOAD_FUNC() for i in range(top_n)]
@@ -284,9 +284,9 @@ def ensemble_atk_with_best_grid_search_networks(top_n=5):
 
 def ga_grid_search_parameter_influence_eval():
     # Load df and params for best average performance
-    with open("ga_weight_evo_grid_search_results.pickle", "rb") as f:
+    with open("res/ga_weight_evo_grid_search_results.pickle", "rb") as f:
         df = pickle.load(f)
-    with open("ga_weight_evo_grid_best_experiment_data.pickle", "rb") as f:
+    with open("res/ga_weight_evo_grid_best_experiment_data.pickle", "rb") as f:
         (ps, mp, mr, mpdr, fdr, ass, sm, _, _, _, key_rank) = pickle.load(f)
     params = (ps, mp, mr, mpdr, fdr, ass, sm)
 
@@ -305,8 +305,8 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
            mut_power_decay_rate, truncation_proportion, atk_set_size, nn,
            x_valid, y_valid, ptexts_valid, x_test, y_test, ptexts_test,
            true_validation_subkey, true_atk_subkey, subkey_idx, parallelise,
-           apply_fi, select_fun, metric_type, experiment_name="test",
-           evaluate_on_test_set=True):
+           apply_fi, select_fun, metric_type, n_atk_folds=1,
+           experiment_name="test", remote=False, evaluate_on_test_set=True):
     """
     Runs a genetic algorithm with the given parameters and tests the resulting
     best individual on the given test set. The best individual, best fitnesses
@@ -327,7 +327,9 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
         parallelise,
         apply_fi,
         select_fun,
-        metric_type
+        metric_type,
+        n_atk_folds=n_atk_folds,
+        remote=remote
     )
 
     # Obtain the best network resulting from the GA
@@ -346,12 +348,13 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
         # Create a new model from the best individual's weights and test it
         nn.set_weights(best_indiv.weights)
         kfold_ascad_atk_with_varying_size(
-            30,
+            1,
             nn,
             2,
             experiment_name,
             atk_data=(x_test, y_test, true_atk_subkey, ptexts_test),
-            parallelise=parallelise
+            parallelise=parallelise,
+            remote=remote
         )
 
         # Evaluate the best network's performance on the test set
@@ -364,7 +367,7 @@ def run_ga(max_gens, pop_size, mut_power, mut_rate, crossover_rate,
 
 
 def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False,
-                         apply_fi=True, parallelise=False):
+                         apply_fi=False, parallelise=False):
     (x_train, y_train, x_atk, y_atk, train_meta, atk_meta) = \
         load_ascad_data(load_metadata=True, remote_loc=remote_loc)
     original_input_shape = (700, 1)
@@ -392,12 +395,12 @@ def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False,
     # Train the CNN by running it through the GA
     nn = NN_LOAD_FUNC()
 
-    pop_size = 50
-    atk_set_size = 5120
+    pop_size = 10
+    atk_set_size = 256
     select_fun = "roulette_wheel"
     execution_func = run_ga if not averaged else averaged_ga_experiment
     execution_func(
-        max_gens=5,
+        max_gens=1,
         pop_size=pop_size,
         mut_power=0.03,
         mut_rate=0.04,
@@ -419,7 +422,9 @@ def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False,
         apply_fi=apply_fi,  # TODO: Check if FI is applied correctly, i.e. with cascading effect -> write small unit test
         select_fun=select_fun,
         metric_type=MetricType.INCREMENTAL_KEYRANK,
-        experiment_name=gen_experiment_name(pop_size, atk_set_size, select_fun) + f"_no-shuf_{'fi' if apply_fi else 'no-fi'}"  # TODO: Remove weird exp name modifiers
+        n_atk_folds=10,
+        experiment_name=gen_experiment_name(pop_size, atk_set_size, select_fun) + "multifold_test",
+        remote=remote_loc
     )
 
 
@@ -427,8 +432,9 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
            crossover_rate, mut_power_decay_rate, truncation_proportion,
            atk_set_size, nn, x_valid, y_valid, ptexts_valid, x_test, y_test,
            ptexts_test, true_validation_subkey, true_atk_subkey, parallelise,
-           apply_fi, select_fun, metric_type, subkey_idx=2, n_experiments=10,
-           experiment_name="test", save_results=True):
+           apply_fi, select_fun, metric_type, n_atk_folds=1, subkey_idx=2,
+           n_experiments=10, experiment_name="test", remote=False,
+           save_results=True):
     """
     Runs a given amount of GA experiments with the given parameters and returns
     the average key rank obtained with the full given attack set.
@@ -456,7 +462,9 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
             parallelise,
             apply_fi,
             select_fun,
-            metric_type
+            metric_type,
+            n_atk_folds=n_atk_folds,
+            remote=remote
         )
 
         best_indiv = \
@@ -672,11 +680,20 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True):
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
         load_chipwhisperer_data(n_train=8000, subkey_idx=subkey_idx)
 
+    suffix = "_ga" if train_with_ga else "_sgd"
+
     # Load and train MLP
-    nn = small_mlp_cw(build=False)
+    nn = None
     if train_with_ga:
-        nn = train_nn_with_ga(nn, x_train, y_train, pt_train, k, subkey_idx)
+        nn = small_mlp_cw(build=False)
+        nn = train_nn_with_ga(
+            nn, x_train, y_train, pt_train, k, subkey_idx, atk_set_size=256,
+            select_fn="roulette_wheel",
+            metric_type=MetricType.INCREMENTAL_KEYRANK, parallelise=True,
+            shuffle_traces=True
+        )
     else:
+        nn = small_mlp_cw(build=True)
         y_train = keras.utils.to_categorical(y_train)
         n_epochs = 50
         batch_size = 50
@@ -685,21 +702,20 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True):
         nn.compile(optimizer, loss_fn)
         history = nn.fit(x_train, y_train, batch_size, n_epochs)
     if save:
-        suffix = "_ga" if train_with_ga else "_sgd"
         nn.save(f"./trained_models/cw_mlp_trained{suffix}.h5")
 
     kfold_ascad_atk_with_varying_size(
-        30,
+        18,
         nn,
         subkey_idx=subkey_idx,
-        experiment_name="chipwhisperer_mlp_test",
+        experiment_name=f"chipwhisperer_mlp_{suffix}_test",
         atk_data=(x_atk, y_atk, k, pt_atk),
-        parallelise=False
+        parallelise=True
     )
 
 
 def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
-    atk_data=None, parallelise=False):
+    atk_data=None, parallelise=False, remote=False):
     # Use the given data if possible. Load 10k ASCAD attack traces otherwise.
     (x_atk, y_atk, target_subkey, atk_ptexts) = \
         atk_data if atk_data \
@@ -710,7 +726,7 @@ def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
 
     mean_ranks = kfold_mean_key_ranks(
         y_pred_probs, atk_ptexts, target_subkey, k, subkey_idx,
-        experiment_name, parallelise=parallelise
+        experiment_name, parallelise=parallelise, remote=remote
     )
 
     if experiment_name:
@@ -735,9 +751,10 @@ def test_fitness_function_consistency(nn_quality="medium"):
         for indiv in indivs:
             indiv.random_weight_init()
     if nn_quality == "medium":  # best networks from a prior random search
-        with open("ga_weight_evo_grid_key_rank_zero_indivs.pickle", "rb") as f:
+        indivs_path = "res/ga_weight_evo_grid_key_rank_zero_indivs.pickle"
+        with open(indivs_path, "rb") as f:
             key_rank_zero_indivs = np.array(pickle.load(f), dtype=object)
-        with open("ga_gs_best_networks_avg_key_ranks.pickle", "rb") as f:
+        with open("res/ga_gs_best_networks_avg_key_ranks.pickle", "rb") as f:
             avg_key_ranks = pickle.load(f)
         top_idxs = np.argsort(avg_key_ranks)[:n_indivs]
         indivs = [tup[0] for tup in key_rank_zero_indivs[top_idxs]]
@@ -791,7 +808,8 @@ def test_fitness_function_consistency(nn_quality="medium"):
                         i += 1
     print("Finished.")
 
-    with open(f"fitness_consistency_eval_df_{nn_quality}.pickle", "wb") as f:
+    df_path = f"res/fitness_consistency_eval_df_{nn_quality}.pickle"
+    with open(df_path, "wb") as f:
         pickle.dump(df, f)
 
     pool.close()
@@ -810,7 +828,8 @@ def test_fitness_function_consistency(nn_quality="medium"):
         )
     for f in fold_amnts} for t in trace_amnts} for m in metric_types}
 
-    with open(f"fitness_consistency_mean_stds_{nn_quality}.pickle", "wb") as f:
+    fs_stds_path = f"res/fitness_consistency_mean_stds_{nn_quality}.pickle"
+    with open(fs_stds_path, "wb") as f:
         pickle.dump(mean_stdevs, f)
 
     # # For each metric, plot n_traces & n_folds vs. mean fitness std.
