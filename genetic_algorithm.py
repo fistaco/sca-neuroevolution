@@ -11,9 +11,9 @@ from data_processing import sample_data, balanced_sample
 from helpers import (exec_sca, compute_fitness, calc_max_fitness,
                      calc_min_fitness, get_pool_size)
 from metrics import MetricType
+import models
 from models import (build_small_cnn_ascad, load_small_cnn_ascad,
-                    load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
-                    NN_LOAD_FUNC)
+                    load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad)
 from nn_genome import NeuralNetworkGenome
 from params import *
 
@@ -23,9 +23,10 @@ class GeneticAlgorithm:
                  mut_power_decay_rate, truncation_proportion, atk_set_size,
                  parallelise=False, apply_fitness_inheritance=False,
                  select_fun="tournament", metric_type=MetricType.KEYRANK,
-                 n_atk_folds=1, remote=False):
+                 n_atk_folds=1, remote=False, t_size=3):
         self.max_gens = max_gens
         self.pop_size = pop_size
+        self.full_pop_size = pop_size*2  # Pop size when including offspring
         self.mut_power = mut_power
         self.mut_rate = mut_rate
         self.crossover_rate = crossover_rate
@@ -65,6 +66,7 @@ class GeneticAlgorithm:
             "tournament": self.tournament_selection
         }
         self.selection_method = selection_methods[select_fun]
+        self.t_size = t_size
     
     def __del__(self):
         if self.parallelise:
@@ -165,8 +167,8 @@ class GeneticAlgorithm:
             # Run fitness evaluations sequentially
             for (i, indiv) in enumerate(self.population):
                 indiv.fitness = self.fitnesses[i] = multifold_fitness_eval(
-                    indiv.weights, x_atk, y_atk, ptexts, true_subkey,
-                    subkey_idx, self.metric_type, self.atk_set_size
+                    indiv.weights, atk_sets, true_subkey, subkey_idx,
+                    self.metric_type, self.atk_set_size
                 )
 
     def adjust_fitnesses(self, fi_decay=0.2):
@@ -235,43 +237,56 @@ class GeneticAlgorithm:
 
         return new_population
 
-    def tournament_selection(self, t_size=3):
+    def tournament_selection(self, replace=False):
         """
         Selects potentially strong individuals by performing fitness-based
         tournaments with replacement.
         """
         new_population = np.empty(self.pop_size, dtype=object)
         for i in range(self.pop_size):
-            # Pick a random participant, which starts as the winner by default
-            winner = np.random.choice(self.population)
-
-            # Compare (t_size - 1) more individuals based on their fitness 
-            for j in range(t_size - 1):
-                indiv = np.random.choice(self.population)
-                if indiv.fitness < winner.fitness:
-                    winner = indiv.clone()
-
-            new_population[i] = winner.clone()  # TODO: Implement version without replacement
+            # Pick 3 random participants and pick the fittest one
+            idxs = np.random.choice(self.full_pop_size, self.t_size, replace)
+            new_population[i] = self.fitness_tournament(idxs)
 
         return new_population
 
-
-    def unbiased_tournament_selection(self, t_size=3):
+    def unbiased_tournament_selection(self, t_size=4):
         """
         Selects potentially strong individuals by performing fitness-based
-        tournaments where each individual participates in exactly `t_size`
+        tournaments where each individual participates in exactly `(t_size/2)`
         tournaments.
         """
-        # Preprocess tournament groups by creating `t_size` index permutations
-        # TODO: Implement this for selection of half the population somehow
-        idx_permutations = np.zeros((t_size, self.pop_size), dtype=np.uint16)
+        assert t_size % 2 == 0, "t_size cannot be odd for unbiased t_select"
 
+        # Set up permutations of the full population, including offspring
+        idx_permuts = np.array([
+            np.random.permutation(self.full_pop_size) for _ in range(t_size//2)
+        ], dtype=np.uint16)
+
+        # Construct tournament groups by lining up halves of the permutations
+        tourn_permuts = np.zeros((t_size, self.pop_size), dtype=np.uint16)
+        for i in range(t_size//2):
+            tourn_permuts[i] = idx_permuts[i][:self.pop_size]
+            tourn_permuts[i + 1] = idx_permuts[i][self.pop_size:]
+
+        # Select members for the population with `pop_size` tournaments
         new_population = np.empty(self.pop_size, dtype=object)
         for i in range(self.pop_size):
-            pass
+            idxs = tourn_permuts[:, i]
+            new_population[i] = self.fitness_tournament(idxs)
 
         return new_population
 
+    def fitness_tournament(self, idxs):
+        """
+        Executes single tournament for tournament selection with individuals
+        corresponding to the given indices and returns the winner (cloned, not
+        by reference).
+        """
+        indivs = self.population[idxs]
+        winner = indivs[np.argmin(self.fitnesses[idxs])]
+
+        return winner.clone()
 
     def produce_offpsring(self):
         """
@@ -340,7 +355,7 @@ def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx,
     Returns:
         The key rank obtained with the SCA.
     """
-    nn = NN_LOAD_FUNC()
+    nn = models.NN_LOAD_FUNC()
     nn.set_weights(weights)
 
     return compute_fitness(
@@ -358,7 +373,7 @@ def multifold_fitness_eval(weights, atk_sets, true_subkey, subkey_idx,
     Returns:
         The key rank obtained with the SCA.
     """
-    nn = NN_LOAD_FUNC()
+    nn = models.NN_LOAD_FUNC()
     nn.set_weights(weights)
 
     return np.mean([
@@ -402,8 +417,11 @@ def train_nn_with_ga(
         parallelise=False,
         apply_fi=False,
         select_fn=SELECTION_FUNCTION,
+        t_size=3,
         metric_type=METRIC_TYPE,
-        shuffle_traces=True
+        shuffle_traces=True,
+        n_atk_folds=1,
+        remote=False
     ):
     """
     Trains the weights of the given NN on the given data set by running it
@@ -424,8 +442,11 @@ def train_nn_with_ga(
         atk_set_size,
         parallelise,
         apply_fi,
-        select_fun,
-        metric_type
+        select_fn,
+        metric_type,
+        n_atk_folds=n_atk_folds,
+        remote=remote,
+        t_size=t_size
     )
 
     # Obtain the best network resulting from the GA
