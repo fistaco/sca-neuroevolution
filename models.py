@@ -219,4 +219,13 @@ def load_nn_from_experiment_results(experiment_name, load_model_function):
     return nn
 
 
-NN_LOAD_FUNC = load_small_mlp_ascad
+def set_nn_load_func(nn_str):
+    global NN_LOAD_FUNC
+
+    mapping = {
+        "mlp_ascad": load_small_mlp_ascad,
+        "cnn_ascad": load_small_cnn_ascad_no_batch_norm,
+        "mlp_cw": small_mlp_cw
+    }
+
+    NN_LOAD_FUNC = mapping[nn_str]

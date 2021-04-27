@@ -20,7 +20,8 @@ from helpers import (compute_fold_keyranks, compute_mem_req,
                      gen_ga_grid_search_arg_lists, kfold_mean_key_ranks,
                      label_to_subkey)
 from metrics import MetricType, keyrank
-from models import (NN_LOAD_FUNC, build_small_cnn_ascad,
+import models
+from models import (build_small_cnn_ascad,
                     build_small_cnn_ascad_trainable_conv,
                     build_small_mlp_ascad,
                     build_small_mlp_ascad_trainable_first_layer,
@@ -29,7 +30,7 @@ from models import (NN_LOAD_FUNC, build_small_cnn_ascad,
                     small_mlp_cw)
 from nn_genome import NeuralNetworkGenome
 from plotting import (plot_gens_vs_fitness, plot_n_traces_vs_key_rank,
-                      plot_var_vs_key_rank, plot_3d)
+                      plot_var_vs_key_rank, plot_2d, plot_3d)
 from result_processing import ResultCategory, filter_df
 
 
@@ -69,7 +70,7 @@ def single_weight_evo_grid_search_experiment(exp_idx=0, run_idx=0,
         atk_ptexts, target_atk_subkey) = load_prepared_ascad_vars(
             subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=remote
         )
-    nn = NN_LOAD_FUNC()
+    nn = models.NN_LOAD_FUNC()
 
     # Generate arguments based on the given experiment index
     (ps, mp, mr, mpdr, fdr, ass, sf, mt) = \
@@ -141,7 +142,7 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
         ga.run(nn, x_valid, y_valid, ptexts_valid, true_validation_subkey)
 
     # Create a new model from the best individual's weights and evaluate it
-    nn = NN_LOAD_FUNC()
+    nn = models.NN_LOAD_FUNC()
     nn.set_weights(best_indiv.weights)
     key_rank = exec_sca(nn, x_test, y_test, ptexts_test, true_atk_subkey)
 
@@ -162,7 +163,7 @@ def ga_grid_search_find_best_network():
         key_rank_zero_indivs = pickle.load(f)
     nns = np.empty(len(key_rank_zero_indivs), dtype=object)
     for i in range(len(nns)):
-        nns[i] = NN_LOAD_FUNC()
+        nns[i] = models.NN_LOAD_FUNC()
         nns[i].set_weights(key_rank_zero_indivs[i][0].weights)
 
     # Load data
@@ -240,7 +241,7 @@ def ga_grid_search_best_network_eval():
     with open("res/ga_gs_best_indiv.pickle", "rb") as f:
         # Save as (indiv, experiment_name)
         (indiv, exp_name) = pickle.load(f)
-    nn = NN_LOAD_FUNC()
+    nn = models.NN_LOAD_FUNC()
     nn.set_weights(indiv.weights)
 
     # Load data
@@ -271,7 +272,7 @@ def ensemble_atk_with_best_grid_search_networks(top_n=5):
     with open("res/ga_gs_best_networks_avg_key_ranks.pickle", "rb") as f:
         avg_key_ranks = pickle.load(f)
     top_five_idxs = np.argsort(avg_key_ranks)[:top_n]
-    nns = [NN_LOAD_FUNC() for i in range(top_n)]
+    nns = [models.NN_LOAD_FUNC() for i in range(top_n)]
     for i in range(top_n):
         indiv = key_rank_zero_indivs[top_five_idxs[i]][0]
         nns[i].set_weights(indiv.weights)
@@ -393,14 +394,14 @@ def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False,
     x_atk = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
 
     # Train the CNN by running it through the GA
-    nn = NN_LOAD_FUNC()
+    nn = models.NN_LOAD_FUNC()
 
-    pop_size = 10
-    atk_set_size = 256
-    select_fun = "roulette_wheel"
+    pop_size = 52
+    atk_set_size = 1024
+    select_fun = "tournament"
     execution_func = run_ga if not averaged else averaged_ga_experiment
     execution_func(
-        max_gens=1,
+        max_gens=25,
         pop_size=pop_size,
         mut_power=0.03,
         mut_rate=0.04,
@@ -472,7 +473,7 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
                    subkey_i=subkey_idx)
 
         # Create a new model from the best individual's weights and evaluate it
-        cnn = NN_LOAD_FUNC()
+        cnn = models.NN_LOAD_FUNC()
         cnn.set_weights(best_indiv.weights)
         key_rank = exec_sca(cnn, x_test, y_test, ptexts_test, true_atk_subkey)
 
@@ -538,7 +539,7 @@ def single_ensemble_experiment():
     # Extract NNs from GA results
     nns = np.empty(n_indivs, dtype=object)
     for i in range(n_indivs):
-        nns[i] = NN_LOAD_FUNC()
+        nns[i] = models.NN_LOAD_FUNC()
         nns[i].set_weights(top_indivs[i].weights)
 
     ensemble_model_sca(
@@ -676,7 +677,8 @@ def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=True):
     )
 
 
-def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True):
+def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
+                             remote=False):
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
         load_chipwhisperer_data(n_train=8000, subkey_idx=subkey_idx)
 
@@ -690,7 +692,7 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True):
             nn, x_train, y_train, pt_train, k, subkey_idx, atk_set_size=256,
             select_fn="roulette_wheel",
             metric_type=MetricType.INCREMENTAL_KEYRANK, parallelise=True,
-            shuffle_traces=True
+            shuffle_traces=True, n_atk_folds=10, remote=remote, t_size=4
         )
     else:
         nn = small_mlp_cw(build=True)
@@ -705,7 +707,7 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True):
         nn.save(f"./trained_models/cw_mlp_trained{suffix}.h5")
 
     kfold_ascad_atk_with_varying_size(
-        18,
+        30,
         nn,
         subkey_idx=subkey_idx,
         experiment_name=f"chipwhisperer_mlp_{suffix}_test",
@@ -746,7 +748,7 @@ def test_fitness_function_consistency(nn_quality="medium"):
     n_indivs = 10
     # Load networks according to desired network quality
     if nn_quality == "low":  # completely random networks
-        base_weights = NN_LOAD_FUNC().get_weights()
+        base_weights = models.NN_LOAD_FUNC().get_weights()
         indivs = [NeuralNetworkGenome(base_weights) for _ in range(n_indivs)]
         for indiv in indivs:
             indiv.random_weight_init()
@@ -770,7 +772,7 @@ def test_fitness_function_consistency(nn_quality="medium"):
     # Set up DF
     trace_amnts = [256, 512, 768, 1024]
     fold_amnts = [5, 10, 15, 20]
-    metric_types = [MetricType.INCREMENTAL_KEYRANK, MetricType.KEYRANK,
+    metric_types = [MetricType.KEYRANK, MetricType.INCREMENTAL_KEYRANK,
                     MetricType.KEYRANK_PROGRESS]
     n_evals = n_indivs*len(trace_amnts)*len(fold_amnts)*len(metric_types)*10
     df = np.zeros(n_evals, dtype=[
@@ -798,10 +800,7 @@ def test_fitness_function_consistency(nn_quality="medium"):
                                 subkey_idx, m, t)
                             for s in sets
                         ]
-                        fitnesses = pool.starmap(
-                            evaluate_fitness,
-                            argss
-                        )
+                        fitnesses = pool.starmap(evaluate_fitness, argss)
                         fitness = np.mean(fitnesses)
 
                         df[i] = (t, f, m, indiv_id, fitness)
@@ -844,6 +843,94 @@ def test_fitness_function_consistency(nn_quality="medium"):
             "Folds", "Traces", "Std. dev.",
             f"Folds & traces ~ fitness standard deviation ({m.name})"
         )
+
+
+def test_inc_kr_fold_consistency():
+    """
+    Determines the consistency of the incremental key rank metric by computing
+    its standard deviation for different amounts of folds of 256 balanced
+    traces, averaged over 10 medium quality individuals.
+    """
+    np.random.seed(77)
+
+    # Load networks
+    n_indivs = 10
+    indivs_path = "res/ga_weight_evo_grid_key_rank_zero_indivs.pickle"
+    with open(indivs_path, "rb") as f:
+        key_rank_zero_indivs = np.array(pickle.load(f), dtype=object)
+    with open("res/ga_gs_best_networks_avg_key_ranks.pickle", "rb") as f:
+        avg_key_ranks = pickle.load(f)
+    top_idxs = np.argsort(avg_key_ranks)[:n_indivs]
+    indivs = [tup[0] for tup in key_rank_zero_indivs[top_idxs]]
+    del key_rank_zero_indivs
+
+    # Load data
+    subkey_idx = 2
+    (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
+        load_prepared_ascad_vars(
+            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=False
+        )
+
+    # Set up DF
+    m = MetricType.INCREMENTAL_KEYRANK
+    t = 256
+    fold_amnts = [25, 30, 35, 40, 45, 50]
+    n_evals = n_indivs*len(fold_amnts)*10
+    df = np.zeros(n_evals, dtype=[
+        ("n_folds", np.uint8), ("indiv_id", np.uint8), ("fitness", np.float32)
+    ])
+
+    pool = mp.Pool(5)
+
+    i = 0
+    for f in fold_amnts:
+        for _ in range(10):  # Repeat everything 10 times
+            sets = [
+                balanced_sample(t, x_train, y_train, pt_train, 256, True)
+                for _ in range(f)
+            ]
+
+            for (indiv_id, indiv) in enumerate(indivs):
+                print(f"Running evaluation {i}/{n_evals - 1}.")
+                argss = [
+                    (indiv.weights, s[0],s[1],s[2], k_train, subkey_idx, m, t)
+                    for s in sets
+                ]
+                fitnesses = pool.starmap(evaluate_fitness, argss)
+                fitness = np.mean(fitnesses)
+
+                df[i] = (f, indiv_id, fitness)
+                i += 1
+    print("Finished.")
+
+    df_path = f"res/inc_kr_fold_consistency_df_{nn_quality}.pickle"
+    with open(df_path, "wb") as f:
+        pickle.dump(df, f)
+
+    pool.close()
+    pool.join()
+
+    mean_stdevs = { f:
+        np.mean(
+            [
+                np.std(df[
+                    (df["n_folds"] == f) & (df["indiv_id"] == i)
+                ]["fitness"])
+                for i in range(n_indivs)
+            ]
+        )
+    for f in fold_amnts}
+
+    fs_stds_path = f"res/inc_kr_fold_consistency_mean_stds_{nn_quality}.pickle"
+    with open(fs_stds_path, "wb") as f:
+        pickle.dump(mean_stdevs, f)
+
+    # Plot n_folds vs. mean fitness std.
+    ys = [mean_stdevs[f] for f in fold_amnts]
+
+    plot_2d(fold_amnts, ys, "Folds", "Std. dev.",
+            f"Folds ~ fitness standard deviation ({m.name})"
+    )
 
 
 def compute_memory_requirements(pop_sizes, atk_set_sizes):
