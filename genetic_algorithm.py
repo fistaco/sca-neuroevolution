@@ -7,7 +7,7 @@ from copy import deepcopy
 import numpy as np
 import tensorflow as tf
 
-from data_processing import sample_data, balanced_sample
+from data_processing import sample_data, balanced_sample, sample_traces
 from helpers import (exec_sca, compute_fitness, calc_max_fitness,
                      calc_min_fitness, get_pool_size)
 from metrics import MetricType
@@ -16,6 +16,7 @@ from models import (build_small_cnn_ascad, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad)
 from nn_genome import NeuralNetworkGenome
 from params import *
+from plotting import plot_gens_vs_fitness
 
 
 class GeneticAlgorithm:
@@ -63,17 +64,18 @@ class GeneticAlgorithm:
         # Use a dictionary to enable simple selection method parametrisation
         selection_methods = {
             "roulette_wheel": self.roulette_wheel_selection,
-            "tournament": self.tournament_selection
+            "tournament": self.tournament_selection,
+            "unbiased_tournament": self.unbiased_tournament_selection
         }
         self.selection_method = selection_methods[select_fun]
         self.t_size = t_size
-    
+
     def __del__(self):
         if self.parallelise:
             self.pool.close()
 
     def run(self, nn, x_atk_full, y_atk_full, ptexts, true_subkey, subkey_i=2,
-            shuffle_traces=True):
+            shuffle_traces=True, balanced=True, debug=False):
         """
         Runs the genetic algorithm with the parameters it was constructed with
         and returns the best found individual.
@@ -94,8 +96,9 @@ class GeneticAlgorithm:
         while gen < self.max_gens and best_fitness > self.min_fitness:
             # Obtain balanced, optionally random samples from the attack set
             atk_sets = [
-                balanced_sample(self.atk_set_size, x_atk_full, y_atk_full,
-                                ptexts, shuffle=shuffle_traces)
+                sample_traces(self.atk_set_size, x_atk_full, y_atk_full,
+                                ptexts, shuffle=shuffle_traces,
+                                balanced=balanced)
                 for _ in range(self.n_atk_folds)
             ]
 
@@ -119,12 +122,16 @@ class GeneticAlgorithm:
             self.population[self.pop_size:] = self.produce_offpsring()
 
             # Track useful information
-            # TODO: Test best individual on a separate test to check generalisation
+            # TODO: Test best individual on a separate test set to observe generalisation
             self.best_fitness_per_gen[gen] = best_fitness
             print(f"Best fitness in generation {gen}: {best_fitness}")
 
             self.mut_power *= self.mut_power_decay_rate
             gen += 1
+
+            if debug:
+                for indiv in self.population:
+                    print(f"({indiv.indiv_id}, {indiv.fitness})")
 
         # Clean up
         for i in range(len(self.population)):
@@ -140,7 +147,9 @@ class GeneticAlgorithm:
         """
         weights = nn.get_weights()
         for i in range(len(self.population)):
-            self.population[i] = NeuralNetworkGenome(weights, self.max_fitness)
+            self.population[i] = NeuralNetworkGenome(
+                weights, self.max_fitness, i
+            )
             self.population[i].random_weight_init()
 
     def evaluate_fitness(self, atk_sets, true_subkey, subkey_idx):
@@ -208,9 +217,13 @@ class GeneticAlgorithm:
         """
         new_population = np.empty(self.pop_size, dtype=object)
 
+        # Potentially use a truncated population with the best fitnesses
+        trunc_size = round(self.truncation_proportion*self.full_pop_size)
+        pop = self.population[np.argsort(self.fitnesses)[:trunc_size]]
+
         # Invert fitnesses because fitness is minimised
         inverted_fitnesses = np.fromiter(
-            (self.max_fitness - indiv.fitness for indiv in self.population),
+            (self.max_fitness - indiv.fitness for indiv in pop),
             dtype=self.fitness_dtype
         )
 
@@ -219,10 +232,9 @@ class GeneticAlgorithm:
 
         # Compute individual fitness probabilities and sum them up cumulatively
         # to construct sections of the roulette wheel
-        size = self.pop_size*2
-        cumulative_select_probs = np.zeros(size, dtype=float)
+        cumulative_select_probs = np.zeros(trunc_size, dtype=float)
         cumulative_prob = 0.0
-        for i in range(size):
+        for i in range(trunc_size):
             cumulative_prob += inverted_fitnesses[i] / inv_fitness_sum
             cumulative_select_probs[i] = cumulative_prob
 
@@ -233,7 +245,7 @@ class GeneticAlgorithm:
         # Build the new population by "spinning the wheel" repeatedly
         for i in range(n_elites, self.pop_size):
             idx = cumulative_select_probs.searchsorted(np.random.uniform())
-            new_population[i] = self.population[idx].clone()
+            new_population[i] = pop[idx].clone()
 
         return new_population
 
@@ -421,7 +433,10 @@ def train_nn_with_ga(
         metric_type=METRIC_TYPE,
         shuffle_traces=True,
         n_atk_folds=1,
-        remote=False
+        remote=False,
+        plot_fit_progress=True,
+        exp_name="",
+        debug=False
     ):
     """
     Trains the weights of the given NN on the given data set by running it
@@ -452,8 +467,11 @@ def train_nn_with_ga(
     # Obtain the best network resulting from the GA
     best_indiv = ga.run(
         nn, x_train, y_train, pt_train, k_train, subkey_idx,
-        shuffle_traces=shuffle_traces
+        shuffle_traces=shuffle_traces, debug=debug
     )
     nn.set_weights(best_indiv.weights)
+
+    if plot_fit_progress and exp_name:
+        plot_gens_vs_fitness(exp_name, ga.best_fitness_per_gen)
 
     return nn

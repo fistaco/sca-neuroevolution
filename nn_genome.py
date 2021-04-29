@@ -6,10 +6,11 @@ from metrics import MetricType
 
 
 class NeuralNetworkGenome:
-    def __init__(self, init_weights, init_parent_fitness=255):
+    def __init__(self, init_weights, init_parent_fitness=255, indiv_id=-1):
         # self.model = model
         self.weights = deepcopy(init_weights)  # List of numpy arrays
         self.fitness = -1
+        self.indiv_id = indiv_id
         # TODO: multiple ways of initialising weights?
 
         self.avg_parent_fitness = None
@@ -94,7 +95,9 @@ class NeuralNetworkGenome:
         # clone.weights = deepcopy(self.weights)
         # clone.model.set_weights(clone.weights)
         # clone.fitness = self.fitness
-        clone = NeuralNetworkGenome(self.weights)
+        clone = NeuralNetworkGenome(
+            self.weights, self.avg_parent_fitness, self.indiv_id
+        )
         clone.fitness = self.fitness
 
         return clone

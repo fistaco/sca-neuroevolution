@@ -420,7 +420,7 @@ def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False,
         true_atk_subkey=target_atk_subkey,
         subkey_idx=subkey_idx,
         parallelise=parallelise,
-        apply_fi=apply_fi,  # TODO: Check if FI is applied correctly, i.e. with cascading effect -> write small unit test
+        apply_fi=apply_fi,
         select_fun=select_fun,
         metric_type=MetricType.INCREMENTAL_KEYRANK,
         n_atk_folds=10,
@@ -678,21 +678,26 @@ def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=True):
 
 
 def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
-                             remote=False):
+                             remote=False, ass=256, folds=5,
+                             select_fn="roulette_wheel"):
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
-        load_chipwhisperer_data(n_train=8000, subkey_idx=subkey_idx)
+        load_chipwhisperer_data(n_train=8000, subkey_idx=1, remote=remote)
 
     suffix = "_ga" if train_with_ga else "_sgd"
+    exp_name = f"chipwhisperer_mlp_{suffix}_test"
 
     # Load and train MLP
     nn = None
     if train_with_ga:
         nn = small_mlp_cw(build=False)
         nn = train_nn_with_ga(
-            nn, x_train, y_train, pt_train, k, subkey_idx, atk_set_size=256,
-            select_fn="roulette_wheel",
-            metric_type=MetricType.INCREMENTAL_KEYRANK, parallelise=True,
-            shuffle_traces=True, n_atk_folds=10, remote=remote, t_size=4
+            nn, x_train, y_train, pt_train, k, subkey_idx, atk_set_size=ass,
+            select_fn=select_fn, metric_type=MetricType.KEYRANK_PROGRESS,
+            parallelise=True, shuffle_traces=False, n_atk_folds=folds,
+            remote=remote, t_size=3, max_gens=5, pop_size=50,
+            crossover_rate=0.2, plot_fit_progress=True, exp_name=exp_name,
+            debug=True, truncation_proportion=0.4, mut_power=0.07,
+            mut_rate=0.07
         )
     else:
         nn = small_mlp_cw(build=True)
@@ -707,10 +712,10 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
         nn.save(f"./trained_models/cw_mlp_trained{suffix}.h5")
 
     kfold_ascad_atk_with_varying_size(
-        30,
+        26,
         nn,
         subkey_idx=subkey_idx,
-        experiment_name=f"chipwhisperer_mlp_{suffix}_test",
+        experiment_name=exp_name,
         atk_data=(x_atk, y_atk, k, pt_atk),
         parallelise=True
     )
@@ -845,7 +850,7 @@ def test_fitness_function_consistency(nn_quality="medium"):
         )
 
 
-def test_inc_kr_fold_consistency():
+def test_inc_kr_fold_consistency(nn_quality="medium"):
     """
     Determines the consistency of the incremental key rank metric by computing
     its standard deviation for different amounts of folds of 256 balanced

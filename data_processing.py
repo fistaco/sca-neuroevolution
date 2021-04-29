@@ -110,7 +110,7 @@ def load_dpav4(subkey_idx=0):
     pass
 
 
-def load_chipwhisperer_data(n_train=8000, subkey_idx=0, remote=False):
+def load_chipwhisperer_data(n_train=8000, subkey_idx=1, remote=False):
     """
     Loads the Chipwhisperer data set and returns it as a tuple containing
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k).
@@ -137,20 +137,6 @@ def reshape_nn_input(input_data):
     return input_data.reshape((input_data.shape[0], input_data.shape[1], 1))
 
 
-def sample_data(n_samples, *data_sets):
-    """
-    Extracts and returns n random samples from the given data sets. The same
-    random indices are used to extract samples from each set.
-    """
-    indices = np.random.choice(len(data_sets[0]), n_samples)
-
-    tup = ()
-    for data_set in data_sets:
-        tup += (data_set[indices], )
-
-    return tup
-
-
 def shuffle_data(*data_sets):
     """
     Shuffles each given data set according the same randomly generated indices
@@ -162,6 +148,32 @@ def shuffle_data(*data_sets):
     for data_set in data_sets:
         tup += (data_set[perm], )
     
+    return tup
+
+
+def sample_traces(n_samples, x, y, z, n_classes=256, shuffle=False,
+                  balanced=False):
+    """
+    Samples `n_samples` of traces from the given sets of traces, labels, and
+    plaintexts, optionally balancing them by label value.
+    """
+    if balanced:
+        return balanced_sample(n_samples, x, y, z, n_classes, shuffle)
+    else:
+        return sample_data(n_samples, x, y, z)
+
+
+def sample_data(n_samples, *data_sets):
+    """
+    Extracts and returns n random samples from the given data sets. The same
+    random indices are used to extract samples from each set.
+    """
+    indices = np.random.choice(len(data_sets[0]), n_samples)
+
+    tup = ()
+    for data_set in data_sets:
+        tup += (data_set[indices], )
+
     return tup
 
 
@@ -179,7 +191,8 @@ def balanced_sample(n_samples, x, y, z, n_classes=256, shuffle=False):
     n_samples_per_class = n_samples//n_classes
     uniq, uidxs, counts = np.unique(y, return_index=True, return_counts=True)
 
-    assert n_samples_per_class < counts.min(), "Too few unique samples"
+    assert n_samples_per_class <= counts.min(), \
+        f"Too few unique samples ({counts.min()})"
 
     # Repeatedly add, mask, and rediscover known indices of unique values
     y_m = np.ma.array(y, mask=False)
@@ -189,6 +202,9 @@ def balanced_sample(n_samples, x, y, z, n_classes=256, shuffle=False):
         y_m[uidxs] = np.ma.masked
 
         uidxs = np.unique(y_m, return_index=True)[1][:-1]  # Ignore mask at -1
+
+    if shuffle:
+        return shuffle_data(x[idxs], y[idxs], z[idxs]) 
 
     return (x[idxs], y[idxs], z[idxs])
 

@@ -156,8 +156,9 @@ def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
         kr0_n_traces = first_zero_value_idx(key_ranks, set_size)/(set_size - 1)
         kr_10pct = min(key_ranks[round(set_size*0.1) - 1], 128)/128
         kr_50pct = min(key_ranks[round(set_size*0.5) - 1], 128)/128
+        acc = accuracy(preds, true_labels)
 
-        return kr0_n_traces + kr_10pct + 0.5*kr_50pct
+        return kr0_n_traces + kr_10pct + 0.5*kr_50pct + 0.5*(1 - acc)
     elif metric_type == MetricType.KEYRANK_PROGRESS:
         key_ranks = compute_fold_keyranks(
             7, preds, ptexts, subkey_idx, set_size, true_subkey, verbose=False)
@@ -304,13 +305,28 @@ def calc_max_fitness(metric_type):
     Returns the maximum fitness based on the given metric type.
     """
     return 100 if metric_type == MetricType.ACCURACY else 255
+    mapping = {
+        MetricType.KEYRANK: 255,
+        MetricType.KEYRANK_AND_ACCURACY: 255,
+        MetricType.ACCURACY: 100,
+        MetricType.INCREMENTAL_KEYRANK: 3,
+        MetricType.KEYRANK_PROGRESS: np.inf,
+    }
+    return mapping[metric_type]
 
 
 def calc_min_fitness(metric_type):
     """
     Returns the maximum fitness based on the given metric type.
     """
-    return -1 if metric_type == MetricType.KEYRANK_AND_ACCURACY else 0
+    mapping = {
+        MetricType.KEYRANK: 0,
+        MetricType.KEYRANK_AND_ACCURACY: -1,
+        MetricType.ACCURACY: 0,
+        MetricType.INCREMENTAL_KEYRANK: 0,
+        MetricType.KEYRANK_PROGRESS: -2.5,
+    }
+    return mapping[metric_type]
 
 
 def get_pool_size(remote, pop_size=50):
@@ -350,28 +366,31 @@ def gen_ga_grid_search_arg_lists():
     return argss
 
 
-def gen_large_ga_grid_search_arg_lists():
+def gen_max_resources_ga_grid_search_arg_lists():
     """
     Returns a list of lists, where each inner list contains arguments for a
     single grid search run for the weight evolution GA experiments.
 
-    These argument combinations result in 486 configurations, many of which
+    These argument combinations result in 216 configurations, many of which
     would likely result in a runtime above 4 hours on the TUD HPC cluster.
     """
-    # Total amount of experiments: 486
-    pop_sizes = [50, 75, 100]  # 3 values
-    mut_pows = [0.01, 0.03, 0.05]  # 3 values
-    mut_rates = [0.01, 0.04, 0.07]  # 3 values
-    mut_pow_dec_rates = [0.99, 0.999, 1.0]  # 3 values
-    fi_dec_rates = [0.0, 0.2, 0.4]  # 1 value
-    atk_set_sizes = [256, 512, 1024, 2048]  # 3 values
-    selection_methods = ["tournament"]  # 1 value
+    # Total amount of experiments: 216
+    pop_sizes = [250]  # 1 value
+    mut_pows = [0.03, 0.06, 0.09]  # 3 values
+    mut_rates = [0.04, 0.07, 0.10]  # 3 values
+    mut_pow_dec_rates = [0.99, 0.999]  # 2 values
+    fi_dec_rates = [0.2]  # 1 value # TODO: Implement FI correctly for non-cloned individuals, i.e. give them a parent fitness based on previous gen's performance
+    atk_set_sizes = [5120]  # 1 value
+    selection_methods = ["tournament", "roulette_wheel", "unbiased_tournament"]  # 3 values
     metrics = [MetricType.INCREMENTAL_KEYRANK]  # 1 value
+    apply_fi_modes = [False, True]  # 2 values
+    balanced_traces = [True, False]  # 2 values
 
     argss = [
         tup for tup in itertools.product(
             pop_sizes, mut_pows, mut_rates, mut_pow_dec_rates,
-            fi_dec_rates, atk_set_sizes, selection_methods, metrics
+            fi_dec_rates, atk_set_sizes, selection_methods, metrics,
+            apply_fi_modes, balanced_traces
         )
     ]
 
