@@ -138,4 +138,14 @@ dmypy.json
 cython_debug/
 
 # Overly large amounts of result files
+fig/
+results/
 grid-search-results/
+grid-search-results-prebugfix/
+ga-grid-search-best-networks-data-prebugfix/
+
+# VS Code
+.vscode/
+
+# Scripts that are only meant for working from home (i.e. on Windows)
+*.ps1
