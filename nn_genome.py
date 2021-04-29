@@ -40,6 +40,7 @@ class NeuralNetworkGenome:
 
         if apply_fitness_inheritance:
             child.avg_parent_fitness = self.fitness
+            self.avg_parent_fitness = self.fitness
 
         return child
 
@@ -60,6 +61,7 @@ class NeuralNetworkGenome:
 
         if apply_fitness_inheritance:
             child.avg_parent_fitness = (self.fitness + other.fitness)/2
+            self.avg_parent_fitness = self.fitness
 
         return child
 

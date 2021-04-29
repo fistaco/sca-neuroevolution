@@ -190,9 +190,6 @@ class GeneticAlgorithm:
             impact of the fitness of an individual's parent(s).
         """
         for (i, indiv) in enumerate(self.population):
-            # indiv.fitness = self.fitnesses[i] = round(
-            #     (indiv.fitness + indiv.avg_parent_fitness * (1 - fi_decay))/2
-            # )
             f = indiv.fitness
             fp = indiv.avg_parent_fitness or f
 
@@ -203,8 +200,6 @@ class GeneticAlgorithm:
                 fitness = round(fitness)
 
             indiv.fitness = self.fitnesses[i] = fitness
-            if not indiv.avg_parent_fitness:
-                indiv.avg_parent_fitness = fitness
 
     def roulette_wheel_selection(self, n_elites=1):
         """
@@ -402,10 +397,6 @@ def adjust_fitness(fitness, avg_parent_fitness, fi_decay, scaling=0.5):
     Adjusts and returns the given individual's fitness based on itself, its
     average parent fitness, and the given fitness inheritance decay value.
     """
-    # res = scaling*(
-    #     fitness + avg_parent_fitness * (1 - fi_decay)
-    # )
-    # print(f"f={fitness}, fp={avg_parent_fitness}, f_adj={res}")
     return scaling*(
         fitness + avg_parent_fitness * (1 - fi_decay)
     )
