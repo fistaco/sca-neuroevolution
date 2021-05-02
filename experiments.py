@@ -18,7 +18,8 @@ from helpers import (compute_fold_keyranks, compute_mem_req,
                      compute_mem_req_from_known_vals, exec_sca,
                      gen_experiment_name, gen_extended_exp_name,
                      gen_ga_grid_search_arg_lists, kfold_mean_key_ranks,
-                     label_to_subkey)
+                     label_to_subkey, kfold_mean_inc_kr,
+                     gen_max_resources_ga_grid_search_arg_lists)
 from metrics import MetricType, keyrank
 import models
 from models import (build_small_cnn_ascad,
@@ -40,14 +41,18 @@ def weight_evo_experiment_from_params(cline_args, remote=True):
     parameters and stored the results for a given run index. This is useful
     for the repeating of experiment that failed to store results.
     """
-    ga_params = [cline_args[i] for i in range(1, 9)]
+    ga_params = [cline_args[i] for i in range(1, len(cline_args))]
 
     # Convert each param to its proper datatype and form
-    ga_params[0] = int(ga_params[0])
-    ga_params[1:5] = [float(param) for param in ga_params[1:5]]
-    ga_params[5] = int(ga_params[5])
-    ga_params[6] = SELECT_FUNCTION_MAP[ga_params[6]]
-    ga_params[7] = METRIC_TYPE_MAP[ga_params[7]]
+    ga_params[0] = int(ga_params[0])  # pop size
+    ga_params[1:5] = [float(param) for param in ga_params[1:5]]  # mp - fdr
+    ga_params[5] = int(ga_params[5])  # attack set size
+    ga_params[6] = SELECT_FUNCTION_MAP[ga_params[6]]  # selection function
+    ga_params[7] = METRIC_TYPE_MAP[ga_params[7]]  # metric type
+    ga_params[8] = int(ga_params[8])  # n_folds
+    ga_params[9:11] = [bool(int(ga_param)) for ga_param in ga_params[9:11]]
+    ga_params[11] = float(ga_params[11])  # truncation proportion
+    ga_params[12] = float(ga_params[12])  # crossover rate
     run_idx = int(cline_args[-1])
 
     single_weight_evo_grid_search_experiment(
@@ -55,64 +60,74 @@ def weight_evo_experiment_from_params(cline_args, remote=True):
     )
 
 
-def single_weight_evo_grid_search_experiment(exp_idx=0, run_idx=0,
-                                             params=None, remote=True):
+def single_weight_evo_grid_search_experiment(
+    exp_idx=0, run_idx=0, params=None, remote=True, nn_type="mlp_cw",
+    parallelise=True):
     """
     Executes an averaged GA experiment over 10 runs, where the arguments of the
     GA are determined by the given index for the generated list of GA
     argument tuples.
     """
-    print(f"Starting experiment {exp_idx}/485...")
+    print(f"Starting experiment {exp_idx}/486...")
 
     # Load data
-    subkey_idx = 2
-    (x_train, y_train, train_ptexts, target_train_subkey, x_atk, y_atk, \
-        atk_ptexts, target_atk_subkey) = load_prepared_ascad_vars(
-            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=remote
-        )
+    # subkey_idx = 2
+    # (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
+    #     load_prepared_ascad_vars(
+    #         subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=remote
+    #     )
+    subkey_idx = 1
+    (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
+        load_chipwhisperer_data(n_train=8000, subkey_idx=1, remote=remote)
+    k_train = k_atk = k
     nn = models.NN_LOAD_FUNC()
 
-    # Generate arguments based on the given experiment index
-    (ps, mp, mr, mpdr, fdr, ass, sf, mt) = \
-        params or gen_ga_grid_search_arg_lists()[exp_idx]
-    exp_name = gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, "mlp")
-
-    # Disable parallelisation on the HPC cluster
-    parallelise = not remote
+    # Generate the remaining arguments using the given experiment index
+    (ps, mp, mr, mpdr, fdr, ass, sf, mt, n_folds, fi, bt, tp, cor) = \
+        params or gen_max_resources_ga_grid_search_arg_lists()[exp_idx]
+    ps=5
+    ass=256
+    n_folds=5
+    exp_name = gen_extended_exp_name(
+        ps, mp, mr, mpdr, fdr, ass, sf, mt, nn_type, fi, bt, tp, cor
+    )
 
     run_ga_for_grid_search(
-        max_gens=50,
+        max_gens=2,
         pop_size=ps,
         mut_power=mp,
         mut_rate=mr,
-        crossover_rate=0.5,
+        crossover_rate=cor,
         mut_power_decay_rate=mpdr,
-        truncation_proportion=0.4,
+        truncation_proportion=tp,
         atk_set_size=ass,
         nn=nn,
         x_valid=x_train,
         y_valid=y_train,
-        ptexts_valid=train_ptexts,
+        ptexts_valid=pt_train,
         x_test=x_atk,
         y_test=y_atk,
-        ptexts_test=atk_ptexts,
-        true_validation_subkey=target_train_subkey,
-        true_atk_subkey=target_atk_subkey,
+        ptexts_test=pt_atk,
+        k_valid=k_train,
+        k_test=k_atk,
         parallelise=parallelise,
-        apply_fi=True,
+        apply_fi=fi,
         select_fun=sf,
         metric_type=mt,
+        balanced_traces=bt,
+        n_folds=n_folds,
         run_idx=run_idx,
         experiment_name=exp_name,
-        save_results=True
+        save_results=True,
+        remote=remote
     )
 
 def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
            crossover_rate, mut_power_decay_rate, truncation_proportion,
            atk_set_size, nn, x_valid, y_valid, ptexts_valid, x_test, y_test,
-           ptexts_test, true_validation_subkey, true_atk_subkey, parallelise,
-           apply_fi, select_fun, metric_type, run_idx, experiment_name="test",
-           save_results=True):
+           ptexts_test, k_valid, k_test, parallelise, apply_fi, select_fun,
+           metric_type, balanced_traces, n_folds, run_idx, subkey_idx=1,
+           experiment_name="test", save_results=True, remote=True):
     """
     Runs a one GA experiment with the given parameters and stores the results
     in a directory specific to this experiment.
@@ -135,27 +150,37 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
         parallelise,
         apply_fi,
         select_fun,
-        metric_type
+        metric_type,
+        n_folds,
+        remote
     )
 
     best_indiv = \
-        ga.run(nn, x_valid, y_valid, ptexts_valid, true_validation_subkey)
+        ga.run(nn, x_valid, y_valid, ptexts_valid, k_valid,
+               shuffle_traces=True, balanced=balanced_traces)
 
     # Create a new model from the best individual's weights and evaluate it
     nn = models.NN_LOAD_FUNC()
     nn.set_weights(best_indiv.weights)
-    key_rank = exec_sca(nn, x_test, y_test, ptexts_test, true_atk_subkey)
+
+    # Evaluate the best indiv by computing INC_KR on 100 folds of the test set
+    # TODO: Compute required cluster resources
+    y_pred_probs = nn.predict(x_test)
+    inc_kr = kfold_mean_inc_kr(
+        y_pred_probs, ptexts_test, y_test, k_test, 100, subkey_idx, remote
+    )
 
     if save_results:
         (_, best_fitness_per_gen, top_ten) = ga.get_results()
-        results = (best_indiv, best_fitness_per_gen, top_ten, key_rank)
+        fit = best_indiv.fitness
+        results = (best_indiv, best_fitness_per_gen, top_ten, fit, inc_kr)
         with open(f"{dir_path}/run{run_idx}_results.pickle", "wb") as f:
             pickle.dump(results, f)
 
 
 def ga_grid_search_find_best_network():
     """
-    Compare all of the given potential best networks by attacking a smaller
+    Compares all of the saved potential best networks by attacking a smaller
     data set.
     """
     # Extract best networks from results
@@ -678,10 +703,13 @@ def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=True):
 
 
 def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
-                             remote=False, ass=256, folds=5,
-                             select_fn="roulette_wheel"):
+                             remote=False, ass=256, folds=5, shuffle=True,
+                             select_fn="roulette_wheel", balanced=True,
+                             hw=False):
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
-        load_chipwhisperer_data(n_train=8000, subkey_idx=1, remote=remote)
+        load_chipwhisperer_data(
+            n_train=8000, subkey_idx=1, remote=remote, hw=hw
+        )
 
     suffix = "_ga" if train_with_ga else "_sgd"
     exp_name = f"chipwhisperer_mlp_{suffix}_test"
@@ -692,15 +720,15 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
         nn = small_mlp_cw(build=False)
         nn = train_nn_with_ga(
             nn, x_train, y_train, pt_train, k, subkey_idx, atk_set_size=ass,
-            select_fn=select_fn, metric_type=MetricType.KEYRANK_PROGRESS,
-            parallelise=True, shuffle_traces=False, n_atk_folds=folds,
-            remote=remote, t_size=3, max_gens=5, pop_size=50,
-            crossover_rate=0.2, plot_fit_progress=True, exp_name=exp_name,
-            debug=True, truncation_proportion=0.4, mut_power=0.07,
-            mut_rate=0.07
+            select_fn=select_fn, metric_type=MetricType.INCREMENTAL_KEYRANK,
+            parallelise=True, shuffle_traces=shuffle, n_atk_folds=folds,
+            remote=remote, t_size=3, max_gens=25, pop_size=130,
+            crossover_rate=0.25, plot_fit_progress=True, exp_name=exp_name,
+            debug=False, truncation_proportion=0.6, mut_power=0.04,
+            mut_rate=0.05
         )
     else:
-        nn = small_mlp_cw(build=True)
+        nn = small_mlp_cw(build=True, hw=hw)
         y_train = keras.utils.to_categorical(y_train)
         n_epochs = 50
         batch_size = 50
@@ -712,17 +740,18 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
         nn.save(f"./trained_models/cw_mlp_trained{suffix}.h5")
 
     kfold_ascad_atk_with_varying_size(
-        26,
+        18,
         nn,
         subkey_idx=subkey_idx,
         experiment_name=exp_name,
         atk_data=(x_atk, y_atk, k, pt_atk),
-        parallelise=True
+        parallelise=True,
+        hw=hw
     )
 
 
 def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
-    atk_data=None, parallelise=False, remote=False):
+    atk_data=None, parallelise=False, remote=False, hw=False):
     # Use the given data if possible. Load 10k ASCAD attack traces otherwise.
     (x_atk, y_atk, target_subkey, atk_ptexts) = \
         atk_data if atk_data \
@@ -733,7 +762,7 @@ def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
 
     mean_ranks = kfold_mean_key_ranks(
         y_pred_probs, atk_ptexts, target_subkey, k, subkey_idx,
-        experiment_name, parallelise=parallelise, remote=remote
+        experiment_name, parallelise=parallelise, remote=remote, hw=hw
     )
 
     if experiment_name:
@@ -879,17 +908,17 @@ def test_inc_kr_fold_consistency(nn_quality="medium"):
     # Set up DF
     m = MetricType.INCREMENTAL_KEYRANK
     t = 256
-    fold_amnts = [25, 30, 35, 40, 45, 50]
-    n_evals = n_indivs*len(fold_amnts)*10
+    fold_amnts = [20, 30, 40, 50, 60, 70, 80, 90, 100]
+    n_evals = n_indivs*len(fold_amnts)*30
     df = np.zeros(n_evals, dtype=[
         ("n_folds", np.uint8), ("indiv_id", np.uint8), ("fitness", np.float32)
     ])
 
-    pool = mp.Pool(5)
+    pool = mp.Pool(6)
 
     i = 0
     for f in fold_amnts:
-        for _ in range(10):  # Repeat everything 10 times
+        for _ in range(30):
             sets = [
                 balanced_sample(t, x_train, y_train, pt_train, 256, True)
                 for _ in range(f)

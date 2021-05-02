@@ -4,6 +4,8 @@ import numpy as np
 from keras.utils import to_categorical
 from sklearn import preprocessing
 
+from constants import HW
+
 
 def load_ascad_data(data_filepath="./../ASCAD_data/ASCAD_databases/ASCAD.h5",
                     load_metadata=False, remote_loc=False):
@@ -110,7 +112,8 @@ def load_dpav4(subkey_idx=0):
     pass
 
 
-def load_chipwhisperer_data(n_train=8000, subkey_idx=1, remote=False):
+def load_chipwhisperer_data(n_train=8000, subkey_idx=1, remote=False,
+                            hw=False):
     """
     Loads the Chipwhisperer data set and returns it as a tuple containing
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k).
@@ -123,6 +126,10 @@ def load_chipwhisperer_data(n_train=8000, subkey_idx=1, remote=False):
     k = np.load(f"{dir_path}key.npy")[0][subkey_idx]
 
     x = reshape_nn_input(x)
+
+    if hw:
+        for i in range(10000):
+            y[i] = HW[y[i]]
 
     n = n_train  # End index of train traces and start index of attack traces
 
@@ -151,7 +158,7 @@ def shuffle_data(*data_sets):
     return tup
 
 
-def sample_traces(n_samples, x, y, z, n_classes=256, shuffle=False,
+def sample_traces(n_samples, x, y, z, n_classes=256, shuffle=True,
                   balanced=False):
     """
     Samples `n_samples` of traces from the given sets of traces, labels, and
@@ -177,7 +184,7 @@ def sample_data(n_samples, *data_sets):
     return tup
 
 
-def balanced_sample(n_samples, x, y, z, n_classes=256, shuffle=False):
+def balanced_sample(n_samples, x, y, z, n_classes=256, shuffle=True):
     """
     Obtains a balanced sample of a given size from sets x, y, and z according
     to the first indices with occurrences of unique values in set y.

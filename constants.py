@@ -43,6 +43,9 @@ INVERSE_SBOX =(
     38, 225, 105,  20,  99,  85,  33,  12, 125)
 
 
+HW = [bin(n).count("1") for n in range(256)]
+
+
 SELECT_FUNCTION_MAP = {
     "t": "tournament",
     "r": "roulette_wheel"
@@ -52,5 +55,7 @@ SELECT_FUNCTION_MAP = {
 METRIC_TYPE_MAP = {
     "KEY": MetricType.KEYRANK,
     "ACC": MetricType.ACCURACY,
-    "KEAC": MetricType.KEYRANK_AND_ACCURACY
+    "KEAC": MetricType.KEYRANK_AND_ACCURACY,
+    "INKE": MetricType.INCREMENTAL_KEYRANK,
+    "KEPR": MetricType.KEYRANK_PROGRESS
 }

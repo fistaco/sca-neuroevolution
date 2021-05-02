@@ -7,7 +7,7 @@ import numpy as np
 from tensorflow.keras.losses import CategoricalCrossentropy
 CCE = CategoricalCrossentropy()
 
-from constants import INVERSE_SBOX, SBOX
+from constants import INVERSE_SBOX, SBOX, HW
 from data_processing import shuffle_data
 from metrics import keyrank, accuracy, MetricType
 
@@ -24,9 +24,41 @@ def exec_sca(ann_model, x_atk, y_atk, ptexts, true_subkey, subkey_idx=2):
     return keyrank(subkey_logprobs, true_subkey)
 
 
-def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k,
-                         key_idx=2, experiment_name="", parallelise=False,
-                         remote=False):
+def kfold_mean_inc_kr(y_pred_probs, ptexts, y_true, true_subkey, k, key_idx=2,
+                      remote=False):
+    """
+    Computes the mean incremental key rank on the given list of prediction
+    probability arrays & the data set's metadata over `k` folds.
+
+    This method always runs in parallel.
+    """
+    # Store the incremental key rank for each fold
+    set_size = len(y_pred_probs)
+    inc_krs = np.zeros(k, dtype=np.float32)
+
+    pool = mp.Pool(get_pool_size(remote))
+
+    # Compute key ranks for each trace amount in parallel
+    shuffled = [shuffle_data(y_pred_probs, ptexts, y_true) for _ in range(k)]
+    argss = [
+        (i, shuffled[i][0], shuffled[i][1], key_idx, set_size, true_subkey)
+        for i in range(k)
+    ]
+    # Result = 2D array indexed with [fold, trace_idx]
+    map_results = pool.starmap(compute_fold_keyranks, argss)
+    for fold in range(k):
+        fold_krs, s = map_results[fold], shuffled[fold]
+        inc_krs[fold] = incremental_keyrank(fold_krs, set_size, s[0], s[2])
+
+    pool.close()
+    pool.join()
+
+    return np.mean(inc_krs)
+
+
+def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k, key_idx=2,
+                         experiment_name="", parallelise=False, remote=False,
+                         verbose=True, hw=False):
     """
     Calculates and returns the mean key ranks of the given list of prediction
     probability arrays, the data set's metadata, and the desired number of
@@ -44,7 +76,10 @@ def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k,
         # Compute key ranks for each trace amount in parallel
         shuffled = [shuffle_data(y_pred_probs, ptexts) for i in range(k)]
         argss = [
-            (i, shuffled[i][0], shuffled[i][1], key_idx, set_size, true_subkey)
+            (
+                i, shuffled[i][0], shuffled[i][1], key_idx, set_size,
+                true_subkey, verbose, hw
+            )
             for i in range(k)
         ]
         # Result = 2D array indexed with [fold, trace_idx]
@@ -55,7 +90,8 @@ def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k,
         for fold in range(k):
             y_pred_probs, ptexts = shuffle_data(y_pred_probs, ptexts)
             fold_key_ranks[:, fold] = compute_fold_keyranks(
-                fold, y_pred_probs, ptexts, key_idx, set_size, true_subkey
+                fold, y_pred_probs, ptexts, key_idx, set_size, true_subkey,
+                verbose=True, hw=hw
             )
 
     if parallelise:
@@ -86,7 +122,7 @@ def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k,
 
 
 def compute_fold_keyranks(fold, y_pred_probs, atk_ptexts, subkey_idx,
-                          atk_set_size, true_subkey, verbose=True):
+                          atk_set_size, true_subkey, verbose=True, hw=False):
     """
     Computes the key ranks for each amount of traces for a given fold of attack
     traces, which are assumed to already be shuffled if necessary.
@@ -103,13 +139,25 @@ def compute_fold_keyranks(fold, y_pred_probs, atk_ptexts, subkey_idx,
     for (i, pred_probs) in enumerate(y_pred_probs):
         pt = atk_ptexts[i][subkey_idx]
 
-        # Convert each label to a subkey and add its logprob to the sum
-        for (label, label_pred_prob) in enumerate(pred_probs):
-            subkey = label_to_subkey(pt, label)
+        # TODO: Test the following implementation before using it for HW
+        for k in range(256):
+            l = compute_label(pt, k)
+            if hw:
+                l = HW[l]
 
+            pred_prob = pred_probs[l]
             # Avoid computing np.log(0), which returns -inf
-            logprob = np.log(label_pred_prob) if label_pred_prob > 0 else 0
-            subkey_logprobs[subkey] += logprob
+            logprob = np.log(pred_prob) if pred_prob > 0 \
+                else min(pred_probs)**2
+            subkey_logprobs[k] += logprob
+
+        # # Convert each label to a subkey and add its logprob to the sum
+        # for (label, label_pred_prob) in enumerate(pred_probs):
+        #     subkey = label_to_subkey(pt, label)
+
+        #     # Avoid computing np.log(0), which returns -inf
+        #     logprob = np.log(label_pred_prob) if label_pred_prob > 0 else 0
+        #     subkey_logprobs[subkey] += logprob
     
         # Note that index i stores the key rank obtained after (i+1) traces
         fold_key_ranks[i] = keyrank(subkey_logprobs, true_subkey)
@@ -153,12 +201,7 @@ def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
         key_ranks = compute_fold_keyranks(
             7, preds, ptexts, subkey_idx, set_size, true_subkey, verbose=False)
 
-        kr0_n_traces = first_zero_value_idx(key_ranks, set_size)/(set_size - 1)
-        kr_10pct = min(key_ranks[round(set_size*0.1) - 1], 128)/128
-        kr_50pct = min(key_ranks[round(set_size*0.5) - 1], 128)/128
-        acc = accuracy(preds, true_labels)
-
-        return kr0_n_traces + kr_10pct + 0.5*kr_50pct + 0.5*(1 - acc)
+        return incremental_keyrank(key_ranks, set_size, preds, true_labels)
     elif metric_type == MetricType.KEYRANK_PROGRESS:
         key_ranks = compute_fold_keyranks(
             7, preds, ptexts, subkey_idx, set_size, true_subkey, verbose=False)
@@ -184,7 +227,7 @@ def label_to_subkey(ptext, label, mask=0):
     return INVERSE_SBOX[label] ^ ptext ^ mask
 
 
-def subkey_pred_logprobs(label_pred_probs, ptexts, subkey_idx=2, masks=None):
+def subkey_pred_logprobs(label_pred_probs, ptexts, subkey_idx=2, hw=False):
     """
     Computes the logarithm of the prediction probability of each subkey
     candidate. This is done by iterating over each trace's label prediction
@@ -198,16 +241,49 @@ def subkey_pred_logprobs(label_pred_probs, ptexts, subkey_idx=2, masks=None):
     for (i, pred_probs) in enumerate(label_pred_probs):
         pt = ptexts[i][subkey_idx]
 
-        # Convert each label to a subkey and add its logprob to the sum
-        for (label, label_pred_prob) in enumerate(pred_probs):
-            subkey = label_to_subkey(pt, label)
+        # TODO: Test the following implementation before using it for HW
+        for k in range(256):
+            l = compute_label(pt, k)
+            if hw:
+                l = HW[l]
 
+            pred_prob = pred_probs[l]
             # Avoid computing np.log(0), which returns -inf
-            # Note: ASCAD devs solve this by defaulting to min(pred_probs)**2
-            logprob = np.log(label_pred_prob) if label_pred_prob > 0 else 0  # TODO: Change to ASCAD implementation
-            subkey_logprobs[subkey] += logprob
-    
+            logprob = np.log(pred_prob) if pred_prob > 0 \
+                else min(pred_probs)**2
+            subkey_logprobs[k] += logprob
+
+        # # Convert each label to a subkey and add its logprob to the sum
+        # for (label, label_pred_prob) in enumerate(pred_probs):
+        #     subkey = label_to_subkey(pt, label)
+
+        #     # Avoid computing np.log(0), which returns -inf
+        #     logprob = np.log(label_pred_prob) if label_pred_prob > 0 \
+        #         else min(pred_probs)**2
+        #     subkey_logprobs[subkey] += logprob
+
     return subkey_logprobs
+
+
+def incremental_keyrank(key_ranks, set_size, preds, true_labels):
+    """
+    Computes the incremental key rank metric as the % of traces at which kr 0
+    was achieved + kr at 10% traces + 0.5*(kr at 50% traces) + 0.5*(1 - acc).
+    """
+    kr0_n_traces = first_zero_value_idx(key_ranks, set_size)/(set_size - 1)
+    kr_10pct = min(key_ranks[round(set_size*0.1) - 1], 128)/128
+    kr_50pct = min(key_ranks[round(set_size*0.5) - 1], 128)/128
+    acc = accuracy(preds, true_labels)
+
+    return kr0_n_traces + kr_10pct + 0.5*kr_50pct + 0.5*(1 - acc)
+
+
+def ga_stagnation(fits, curr_gen, n_gens, thresh):
+    """
+    Determines whether a GA's progress has stagnated by observing if the
+    fitness progress over `n_gens` generations is within `thresh`.
+    """
+    return (fits[max(0, curr_gen - n_gens)] - fits[curr_gen]) < thresh
 
 
 def compute_mem_req(pop_size, nn, atk_set_size):
@@ -282,7 +358,8 @@ def gen_experiment_name(pop_size, atk_set_size, select_fun):
     return f"ps{pop_size}-ass{atk_set_size}-{select_fun[0]}select"
 
 
-def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, nn):
+def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, nn, fi, bt, tp,
+                          cor):
     """
     Generates an experiment name for a GA run using the given arguments.
 
@@ -295,9 +372,17 @@ def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, nn):
         ass: Attack set size.
         sf: Selection function.
         mt: Metric type.
-        nn: Neural network model name.
+        nn: Neural network model type.
+        fi: Fitness inheritance on/off.
+        bt: Balanced trace samples on/off.
+        tp: Truncation proportion.
+        cor: Crossover rate/
     """
-    return f"ps{ps}-mp{mp}-mr{mr}-mpdr{mpdr}-fdr{fdr}-ass{ass}-sf_{sf[0]}-mt_{mt.id()}-{nn}"
+    sf_str = f"{sf[0]}sel"
+    fi_str = "fi" if fi else "nofi"
+    bt_str = "balnc" if bt else "rndtr"
+    return f"ps{ps*2}-mp{mp}-mr{mr}-mpdr{mpdr}-fdr{fdr}-ass{ass}-" + \
+           f"{sf_str}-tp{tp}-mt_{mt.id()}-{nn}-{fi_str}-{bt_str}-cor{cor}"
 
 
 def calc_max_fitness(metric_type):
@@ -366,31 +451,66 @@ def gen_ga_grid_search_arg_lists():
     return argss
 
 
-def gen_max_resources_ga_grid_search_arg_lists():
+def gen_mini_grid_search_arg_lists():
     """
     Returns a list of lists, where each inner list contains arguments for a
     single grid search run for the weight evolution GA experiments.
 
-    These argument combinations result in 216 configurations, many of which
-    would likely result in a runtime above 4 hours on the TUD HPC cluster.
+    These argument combinations result in 144 configurations.
     """
-    # Total amount of experiments: 216
-    pop_sizes = [250]  # 1 value
+    pop_sizes = [78]
     mut_pows = [0.03, 0.06, 0.09]  # 3 values
     mut_rates = [0.04, 0.07, 0.10]  # 3 values
     mut_pow_dec_rates = [0.99, 0.999]  # 2 values
-    fi_dec_rates = [0.2]  # 1 value # TODO: Implement FI correctly for non-cloned individuals, i.e. give them a parent fitness based on previous gen's performance
-    atk_set_sizes = [5120]  # 1 value
-    selection_methods = ["tournament", "roulette_wheel", "unbiased_tournament"]  # 3 values
-    metrics = [MetricType.INCREMENTAL_KEYRANK]  # 1 value
-    apply_fi_modes = [False, True]  # 2 values
-    balanced_traces = [True, False]  # 2 values
+    fi_dec_rates = [0.2]
+    atk_set_sizes = [2560]
+    selection_methods = ["tournament", "roulette_wheel"]  # 2 values
+    metrics = [MetricType.INCREMENTAL_KEYRANK]
+    fold_amnts = [50]
+    apply_fi_modes = [False]
+    balanced_traces = [False]
+    trunc_proportions = [0.5, 1.0]  # 2 values
+    co_rates = [0.0, 0.5]  # 2 values
 
     argss = [
         tup for tup in itertools.product(
             pop_sizes, mut_pows, mut_rates, mut_pow_dec_rates,
             fi_dec_rates, atk_set_sizes, selection_methods, metrics,
-            apply_fi_modes, balanced_traces
+            fold_amnts, apply_fi_modes, balanced_traces, trunc_proportions,
+            co_rates
+        )
+    ]
+
+    return argss
+
+
+def gen_max_resources_ga_grid_search_arg_lists():
+    """
+    Returns a list of lists, where each inner list contains arguments for a
+    single grid search run for the weight evolution GA experiments.
+
+    These argument combinations result in 486 configurations.
+    """
+    pop_sizes = [250]
+    mut_pows = [0.03, 0.06, 0.09]  # 3 values
+    mut_rates = [0.04, 0.07, 0.10]  # 3 values
+    mut_pow_dec_rates = [0.99, 0.999]  # 2 values
+    fi_dec_rates = [0.2]
+    atk_set_sizes = [5120]
+    selection_methods = ["tournament", "roulette_wheel", "unbiased_tournament"]  # 3 values
+    metrics = [MetricType.INCREMENTAL_KEYRANK]
+    fold_amnts = [50]
+    apply_fi_modes = [False]
+    balanced_traces = [False]
+    trunc_proportions = [0.4, 0.7, 1.0]  # 3 values
+    co_rates = [0.0, 0.25, 0.5]  # 3 values
+
+    argss = [
+        tup for tup in itertools.product(
+            pop_sizes, mut_pows, mut_rates, mut_pow_dec_rates,
+            fi_dec_rates, atk_set_sizes, selection_methods, metrics,
+            fold_amnts, apply_fi_modes, balanced_traces, trunc_proportions,
+            co_rates
         )
     ]
 
