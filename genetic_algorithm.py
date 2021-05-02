@@ -9,7 +9,7 @@ import tensorflow as tf
 
 from data_processing import sample_data, balanced_sample, sample_traces
 from helpers import (exec_sca, compute_fitness, calc_max_fitness,
-                     calc_min_fitness, get_pool_size)
+                     calc_min_fitness, get_pool_size, ga_stagnation)
 from metrics import MetricType
 import models
 from models import (build_small_cnn_ascad, load_small_cnn_ascad,
@@ -24,7 +24,7 @@ class GeneticAlgorithm:
                  mut_power_decay_rate, truncation_proportion, atk_set_size,
                  parallelise=False, apply_fitness_inheritance=False,
                  select_fun="tournament", metric_type=MetricType.KEYRANK,
-                 n_atk_folds=1, remote=False, t_size=3):
+                 n_atk_folds=1, remote=False, t_size=3, gen_sgd_train=False):
         self.max_gens = max_gens
         self.pop_size = pop_size
         self.full_pop_size = pop_size*2  # Pop size when including offspring
@@ -100,7 +100,10 @@ class GeneticAlgorithm:
                                 ptexts, shuffle=shuffle_traces,
                                 balanced=balanced)
                 for _ in range(self.n_atk_folds)
-            ]
+            ] if self.n_atk_folds > 1 \
+                else [(x_atk_full[:self.atk_set_size],
+                       y_atk_full[:self.atk_set_size],
+                       ptexts[:self.atk_set_size])]
 
             # Note: 5k profiling traces may be insufficient
             # Note: try computing fitness over 100 folds
@@ -118,13 +121,18 @@ class GeneticAlgorithm:
             best_individual = self.population[best_idx]
 
             # Rest of GA main loop, i.e. selection & offspring production
-            self.population[:self.pop_size] = self.selection_method()  # TODO: Add truncation selection?
+            self.population[:self.pop_size] = self.selection_method()
             self.population[self.pop_size:] = self.produce_offpsring()
 
             # Track useful information
-            # TODO: Test best individual on a separate test set to observe generalisation
+            # TODO: Eval best individual on test set to observe generalisation
             self.best_fitness_per_gen[gen] = best_fitness
             print(f"Best fitness in generation {gen}: {best_fitness}")
+
+            # Quit if we're hardly making progress
+            if gen > 100 and \
+                ga_stagnation(self.best_fitness_per_gen, gen, 50, 0.02):
+                break
 
             self.mut_power *= self.mut_power_decay_rate
             gen += 1
@@ -249,11 +257,16 @@ class GeneticAlgorithm:
         Selects potentially strong individuals by performing fitness-based
         tournaments with replacement.
         """
+        # Potentially use a truncated population with the best fitnesses
+        trunc_size = round(self.truncation_proportion*self.full_pop_size)
+        trunc_idxs = np.argsort(self.fitnesses)[:trunc_size]
+        pop, fits = self.population[trunc_idxs], self.fitnesses[trunc_idxs]
+
         new_population = np.empty(self.pop_size, dtype=object)
         for i in range(self.pop_size):
             # Pick 3 random participants and pick the fittest one
-            idxs = np.random.choice(self.full_pop_size, self.t_size, replace)
-            new_population[i] = self.fitness_tournament(idxs)
+            idxs = np.random.choice(trunc_size, self.t_size, replace)
+            new_population[i] = self.fitness_tournament(idxs, pop, fits)
 
         return new_population
 
@@ -265,9 +278,14 @@ class GeneticAlgorithm:
         """
         assert t_size % 2 == 0, "t_size cannot be odd for unbiased t_select"
 
-        # Set up permutations of the full population, including offspring
+        # Potentially use a truncated population with the best fitnesses
+        trunc_size = round(self.truncation_proportion*self.full_pop_size)
+        trunc_idxs = np.argsort(self.fitnesses)[:trunc_size]
+        pop, fits = self.population[trunc_idxs], self.fitnesses[trunc_idxs]
+
+        # Set up permutations of the possibly truncated population
         idx_permuts = np.array([
-            np.random.permutation(self.full_pop_size) for _ in range(t_size//2)
+            np.random.permutation(trunc_size) for _ in range(t_size//2)
         ], dtype=np.uint16)
 
         # Construct tournament groups by lining up halves of the permutations
@@ -280,18 +298,18 @@ class GeneticAlgorithm:
         new_population = np.empty(self.pop_size, dtype=object)
         for i in range(self.pop_size):
             idxs = tourn_permuts[:, i]
-            new_population[i] = self.fitness_tournament(idxs)
+            new_population[i] = self.fitness_tournament(idxs, pop, fits)
 
         return new_population
 
-    def fitness_tournament(self, idxs):
+    def fitness_tournament(self, idxs, population, fitnesses):
         """
         Executes single tournament for tournament selection with individuals
         corresponding to the given indices and returns the winner (cloned, not
         by reference).
         """
-        indivs = self.population[idxs]
-        winner = indivs[np.argmin(self.fitnesses[idxs])]
+        indivs = population[idxs]
+        winner = indivs[np.argmin(fitnesses[idxs])]
 
         return winner.clone()
 
@@ -427,7 +445,8 @@ def train_nn_with_ga(
         remote=False,
         plot_fit_progress=True,
         exp_name="",
-        debug=False
+        debug=False,
+        balanced=True
     ):
     """
     Trains the weights of the given NN on the given data set by running it
@@ -458,7 +477,7 @@ def train_nn_with_ga(
     # Obtain the best network resulting from the GA
     best_indiv = ga.run(
         nn, x_train, y_train, pt_train, k_train, subkey_idx,
-        shuffle_traces=shuffle_traces, debug=debug
+        shuffle_traces=shuffle_traces, debug=debug, balanced=balanced
     )
     nn.set_weights(best_indiv.weights)
 

@@ -23,8 +23,7 @@ class NeuralNetworkGenome:
             for j in range(self.weights[i].shape[-1]):  # Iterate over weights
                 self.weights[i][..., j] = np.float32(np.random.uniform(-1, 1))
 
-    def mutate(self, mut_power, mut_rate, apply_fitness_inheritance=False,
-               fi_decay=0.2):
+    def mutate(self, mut_power, mut_rate, apply_fitness_inheritance=False):
         """
         Creates a new child and mutates each of its weights by adding a number
         from the range [-mut_power, mut_power] if the mut_rate check passes for
@@ -44,7 +43,7 @@ class NeuralNetworkGenome:
 
         return child
 
-    def crossover(self, other, apply_fitness_inheritance=False, fi_decay=0.2):
+    def crossover(self, other, apply_fitness_inheritance=False):
         """
         Applies crossover by uniformly selecting weights from both parents and
         returns the resulting child.
