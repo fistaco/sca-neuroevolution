@@ -56,5 +56,5 @@ if __name__ == "__main__":
     # single_ga_experiment(remote_loc=False, use_mlp=True, averaged=False, apply_fi=False, parallelise=True)
     # train_first_layer_ascad_mlp()
     # test_fitness_function_consistency()
-    attack_chipwhisperer_mlp(remote=True, train_with_ga=True, ass=2560, folds=50, shuffle=False, balanced=False, psize=78, gens=20, hw=False, fi=False)
+    attack_chipwhisperer_mlp(remote=True, train_with_ga=True, ass=2565, folds=50, shuffle=True, balanced=False, psize=78, gens=20, hw=True, fi=False)
     # single_ensemble_experiment()

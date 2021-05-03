@@ -176,7 +176,7 @@ def compute_fold_keyranks(fold, y_pred_probs, atk_ptexts, subkey_idx,
 
 
 def compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey,
-                    atk_set_size, subkey_idx=2):
+                    atk_set_size, subkey_idx=2, hw=False):
     """
     Executes a side-channel attack on the given traces using the given neural
     network and uses the obtained prediction probabilities to compute the key
@@ -185,31 +185,31 @@ def compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey,
     y_pred_probs = nn.predict(x_atk)
     return evaluate_preds(
         y_pred_probs, metric_type, ptexts, true_subkey, y_atk, atk_set_size,
-        subkey_idx
+        subkey_idx, hw
     )
 
 
 def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
-                   set_size, subkey_idx=2):
+                   set_size, subkey_idx=2, hw=False):
     """
     Evaluates the given predictions using the method indicated by the given
     metric type and returns the result.
     """
     if metric_type == MetricType.KEYRANK:
-        subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx)
+        subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx, hw)
         return keyrank(subkey_probs, true_subkey)
     elif metric_type == MetricType.ACCURACY:
         return (1 - accuracy(preds, true_labels))*100
     elif metric_type == MetricType.KEYRANK_AND_ACCURACY:
-        subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx)
+        subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx, hw)
         res = keyrank(subkey_probs, true_subkey) - accuracy(preds, true_labels)
         return res
     elif metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
         return CCE(true_labels, preds).numpy()  # true_labels should be 1-hot
     elif metric_type == MetricType.INCREMENTAL_KEYRANK:
-        # f = (n_traces_for_kr_zero + kr_10_pct + 0.5*kr_50_pct)
+        # f = (n_traces_for_kr_zero + kr_10_pct + 0.5*kr_50_pct + 0.5*acc')
         key_ranks = compute_fold_keyranks(
-            7, preds, ptexts, subkey_idx, set_size, true_subkey, verbose=False)
+            7, preds, ptexts, subkey_idx, set_size, true_subkey, False, hw)
 
         return incremental_keyrank(key_ranks, set_size, preds, true_labels)
     elif metric_type == MetricType.KEYRANK_PROGRESS:
@@ -362,15 +362,18 @@ def load_model_weights_from_ga_results(experiment_name):
     return nn_weights
 
 
-def gen_experiment_name(pop_size, atk_set_size, select_fun):
+def gen_experiment_name(pop_size, atk_set_size, select_fun, n_folds=1,
+                        hw=False):
     """
     Generates an experiment name for a GA run using the given parameters.
     """
-    return f"ps{pop_size}-ass{atk_set_size}-{select_fun[0]}select"
+    sf_str = f"{select_fun[0]}sel"
+    lm_str = "hw" if hw else "id"
+    return f"ps{pop_size}-{atk_set_size}t-{n_folds}f-{sf_str}-{lm_str}"
 
 
 def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, nn, fi, bt, tp,
-                          cor):
+                          cor, hw=False):
     """
     Generates an experiment name for a GA run using the given arguments.
 
@@ -392,8 +395,10 @@ def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, nn, fi, bt, tp,
     sf_str = f"{sf[0]}sel"
     fi_str = "fi" if fi else "nofi"
     bt_str = "balnc" if bt else "rndtr"
+    lm_str = "hw" if hw else "id"
     return f"ps{ps*2}-mp{mp}-mr{mr}-mpdr{mpdr}-fdr{fdr}-ass{ass}-" + \
-           f"{sf_str}-tp{tp}-mt_{mt.id()}-{nn}-{fi_str}-{bt_str}-cor{cor}"
+           f"{sf_str}-tp{tp}-mt_{mt.id()}-{nn}-{fi_str}-{bt_str}-cor{cor}-" + \
+           f"{lm_str}"
 
 
 def calc_max_fitness(metric_type):

@@ -712,8 +712,9 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
             n_train=8000, subkey_idx=1, remote=remote, hw=hw
         )
 
-    suffix = "_ga" if train_with_ga else "_sgd"
-    exp_name = f"chipwhisperer_mlp_{suffix}_test"
+    suffix = "ga" if train_with_ga else "sgd"
+    exp_name = gen_experiment_name(psize, ass, select_fn, folds, hw)
+    exp_name = f"cw_{exp_name}_{suffix}"
 
     # Load and train MLP
     nn = None
@@ -726,7 +727,7 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
             remote=remote, t_size=3, max_gens=gens, pop_size=psize,
             crossover_rate=0.25, plot_fit_progress=True, exp_name=exp_name,
             debug=False, truncation_proportion=0.6, mut_power=0.04,
-            mut_rate=0.05, apply_fi=fi
+            mut_rate=0.05, apply_fi=fi, hw=hw, balanced=balanced
         )
     else:
         nn = small_mlp_cw(build=True, hw=hw)
@@ -738,7 +739,7 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
         nn.compile(optimizer, loss_fn)
         history = nn.fit(x_train, y_train, batch_size, n_epochs)
     if save:
-        nn.save(f"./trained_models/cw_mlp_trained{suffix}.h5")
+        nn.save(f"./trained_models/cw_mlp_trained_{suffix}.h5")
 
     kfold_ascad_atk_with_varying_size(
         52,

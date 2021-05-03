@@ -77,7 +77,7 @@ class GeneticAlgorithm:
             self.pool.close()
 
     def run(self, nn, x_atk, y_atk, pt_atk, k_atk, subkey_i=2,
-            shuffle_traces=True, balanced=True, debug=False):
+            shuffle_traces=True, balanced=True, debug=False, hw=False):
         """
         Runs the genetic algorithm with the parameters it was constructed with
         and returns the best found individual.
@@ -103,7 +103,7 @@ class GeneticAlgorithm:
 
             # Evaluate the fitness of each individual
             self.evaluate_fitness(x_atk, y_atk, pt_atk, k_atk, subkey_i, seed,
-                                  shuffle_traces, balanced)
+                                  shuffle_traces, balanced, hw)
             if self.apply_fi:
                 self.adjust_fitnesses()
 
@@ -153,7 +153,7 @@ class GeneticAlgorithm:
             self.population[i].random_weight_init()
 
     def evaluate_fitness(self, x_atk, y_atk, pt_atk, true_subkey, subkey_idx,
-                         seed, shuffle=True, balanced=True):
+                         seed, shuffle=True, balanced=True, hw=False):
         """
         Computes and sets the current fitness value of each individual in the
         population and list of offspring.
@@ -165,7 +165,7 @@ class GeneticAlgorithm:
                     self.population[i].weights, x_atk, y_atk, pt_atk,
                     true_subkey, subkey_idx, self.metric_type,
                     self.atk_set_size, self.n_atk_folds, seed, shuffle,
-                    balanced
+                    balanced, hw
                 )
                 for i in range(len(self.population))
             ]
@@ -181,7 +181,7 @@ class GeneticAlgorithm:
                 indiv.fitness = self.fitnesses[i] = multifold_fitness_eval(
                     indiv.weights, x_atk, y_atk, pt_atk, true_subkey,
                     subkey_idx, self.metric_type, self.atk_set_size,
-                    self.n_atk_folds, seed, shuffle, balanced
+                    self.n_atk_folds, seed, shuffle, balanced, hw
                 )
 
     def adjust_fitnesses(self, fi_decay=0.2):
@@ -387,7 +387,7 @@ def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx,
 
 def multifold_fitness_eval(weights, x_atk, y_atk, pt_atk, true_subkey,
                            subkey_idx, metric_type, atk_set_size, n_folds,
-                           seed, shuffle=True, balanced=True):
+                           seed, shuffle=True, balanced=True, hw=False):
     """
     Evaluates the fitness of an individual by using its weights to construct a
     new NN, which is used to execute an SCA on the given data.
@@ -401,13 +401,15 @@ def multifold_fitness_eval(weights, x_atk, y_atk, pt_atk, true_subkey,
     nn.set_weights(weights)
 
     fitnesses = np.zeros(n_folds, dtype=np.float64)
+    n_classes = 9 if hw else 256
     for fold in range(n_folds):
         x, y, pt = sample_traces(
-            atk_set_size, x_atk, y_atk, pt_atk, shuffle=shuffle,
+            atk_set_size, x_atk, y_atk, pt_atk, n_classes, shuffle=shuffle,
             balanced=balanced
         )
         fitnesses[fold] = compute_fitness(
-            nn, x, y, pt, metric_type, true_subkey, atk_set_size, subkey_idx
+            nn, x, y, pt, metric_type, true_subkey, atk_set_size, subkey_idx,
+            hw
         )
 
     return np.mean(fitnesses)
@@ -449,7 +451,8 @@ def train_nn_with_ga(
         plot_fit_progress=True,
         exp_name="",
         debug=False,
-        balanced=True
+        balanced=True,
+        hw=False
     ):
     """
     Trains the weights of the given NN on the given data set by running it
@@ -480,7 +483,7 @@ def train_nn_with_ga(
     # Obtain the best network resulting from the GA
     best_indiv = ga.run(
         nn, x_train, y_train, pt_train, k_train, subkey_idx,
-        shuffle_traces=shuffle_traces, debug=debug, balanced=balanced
+        shuffle_traces=shuffle_traces, debug=debug, balanced=balanced, hw=hw
     )
     nn.set_weights(best_indiv.weights)
 
