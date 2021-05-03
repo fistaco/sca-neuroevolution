@@ -12,7 +12,7 @@ SELECTION_FUNCTION = "tournament"
 TOURNAMENT_SIZE = 3
 
 # Params specific to the approach from the paper by Morse and Stanley (2016)
-MUTATION_POWER_DECAY = 0.99
+MUTATION_POWER_DECAY = 0.999
 FITNESS_INHERITANCE_DECAY = 0.2
 
 # SCA-specific parameters

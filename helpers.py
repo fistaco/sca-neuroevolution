@@ -25,33 +25,43 @@ def exec_sca(ann_model, x_atk, y_atk, ptexts, true_subkey, subkey_idx=2):
 
 
 def kfold_mean_inc_kr(y_pred_probs, ptexts, y_true, true_subkey, k, key_idx=2,
-                      remote=False):
+                      remote=False, parallelise=False, hw=False):
     """
     Computes the mean incremental key rank on the given list of prediction
     probability arrays & the data set's metadata over `k` folds.
-
-    This method always runs in parallel.
     """
     # Store the incremental key rank for each fold
     set_size = len(y_pred_probs)
     inc_krs = np.zeros(k, dtype=np.float32)
 
-    pool = mp.Pool(get_pool_size(remote))
+    if parallelise:
+        pool = mp.Pool(get_pool_size(remote))
 
-    # Compute key ranks for each trace amount in parallel
-    shuffled = [shuffle_data(y_pred_probs, ptexts, y_true) for _ in range(k)]
-    argss = [
-        (i, shuffled[i][0], shuffled[i][1], key_idx, set_size, true_subkey)
-        for i in range(k)
-    ]
-    # Result = 2D array indexed with [fold, trace_idx]
-    map_results = pool.starmap(compute_fold_keyranks, argss)
-    for fold in range(k):
-        fold_krs, s = map_results[fold], shuffled[fold]
-        inc_krs[fold] = incremental_keyrank(fold_krs, set_size, s[0], s[2])
+        # Compute key ranks for each trace amount in parallel
+        shuffled = [shuffle_data(y_pred_probs, ptexts, y_true) for _ in range(k)]
+        argss = [
+            (i, shuffled[i][0], shuffled[i][1], key_idx, set_size, true_subkey)
+            for i in range(k)
+        ]
+        # Result = 2D array indexed with [fold, trace_idx]
+        map_results = pool.starmap(compute_fold_keyranks, argss)
+        for fold in range(k):
+            fold_krs, s = map_results[fold], shuffled[fold]
+            inc_krs[fold] = incremental_keyrank(fold_krs, set_size, s[0], s[2])
 
-    pool.close()
-    pool.join()
+        pool.close()
+        pool.join()
+    else:
+        for fold in range(k):
+            y_pred_probs, ptexts, y_true = \
+                shuffle_data(y_pred_probs, ptexts, y_true)
+            fold_krs = compute_fold_keyranks(
+                fold, y_pred_probs, ptexts, key_idx, set_size, true_subkey,
+                verbose=True, hw=hw
+            )
+            inc_krs[fold] = incremental_keyrank(
+                fold_krs, set_size, y_pred_probs, y_true
+            )
 
     return np.mean(inc_krs)
 
@@ -205,7 +215,8 @@ def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
     elif metric_type == MetricType.KEYRANK_PROGRESS:
         key_ranks = compute_fold_keyranks(
             7, preds, ptexts, subkey_idx, set_size, true_subkey, verbose=False)
-        return np.mean(np.diff(key_ranks.astype(np.int16)))
+        krs_20pct_steps = key_ranks[::set_size//8]
+        return np.mean(np.diff(krs_20pct_steps.astype(np.int16)))
     else:
         print("Encountered invalid metric type. Quitting.")
         exit(1)

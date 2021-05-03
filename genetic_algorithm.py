@@ -7,9 +7,11 @@ from copy import deepcopy
 import numpy as np
 import tensorflow as tf
 
-from data_processing import sample_data, balanced_sample, sample_traces
+from data_processing import (sample_data, balanced_sample, sample_traces,
+                            shuffle_data)
 from helpers import (exec_sca, compute_fitness, calc_max_fitness,
-                     calc_min_fitness, get_pool_size, ga_stagnation)
+                     calc_min_fitness, get_pool_size, ga_stagnation,
+                     kfold_mean_inc_kr)
 from metrics import MetricType
 import models
 from models import (build_small_cnn_ascad, load_small_cnn_ascad,
@@ -74,7 +76,7 @@ class GeneticAlgorithm:
         if self.parallelise:
             self.pool.close()
 
-    def run(self, nn, x_atk_full, y_atk_full, ptexts, true_subkey, subkey_i=2,
+    def run(self, nn, x_atk, y_atk, pt_atk, k_atk, subkey_i=2,
             shuffle_traces=True, balanced=True, debug=False):
         """
         Runs the genetic algorithm with the parameters it was constructed with
@@ -94,24 +96,14 @@ class GeneticAlgorithm:
         best_individual = None
 
         while gen < self.max_gens and best_fitness > self.min_fitness:
-            # Obtain balanced, optionally random samples from the attack set
-            atk_sets = [
-                sample_traces(self.atk_set_size, x_atk_full, y_atk_full,
-                                ptexts, shuffle=shuffle_traces,
-                                balanced=balanced)
-                for _ in range(self.n_atk_folds)
-            ] if self.n_atk_folds > 1 \
-                else [(x_atk_full[:self.atk_set_size],
-                       y_atk_full[:self.atk_set_size],
-                       ptexts[:self.atk_set_size])]
+            seed = gen if self.n_atk_folds > 1 else 77
 
-            # Note: 5k profiling traces may be insufficient
-            # Note: try computing fitness over 100 folds
             if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
                 y_atk = tf.keras.utils.to_categorical(y_atk, 256)
 
             # Evaluate the fitness of each individual
-            self.evaluate_fitness(atk_sets, true_subkey, subkey_i)
+            self.evaluate_fitness(x_atk, y_atk, pt_atk, k_atk, subkey_i, seed,
+                                  shuffle_traces, balanced)
             if self.apply_fi:
                 self.adjust_fitnesses()
 
@@ -160,7 +152,8 @@ class GeneticAlgorithm:
             )
             self.population[i].random_weight_init()
 
-    def evaluate_fitness(self, atk_sets, true_subkey, subkey_idx):
+    def evaluate_fitness(self, x_atk, y_atk, pt_atk, true_subkey, subkey_idx,
+                         seed, shuffle=True, balanced=True):
         """
         Computes and sets the current fitness value of each individual in the
         population and list of offspring.
@@ -169,8 +162,10 @@ class GeneticAlgorithm:
             # Set up a tuple of arguments for each concurrent process
             argss = [
                 (
-                    self.population[i].weights, atk_sets, true_subkey,
-                    subkey_idx, self.metric_type, self.atk_set_size
+                    self.population[i].weights, x_atk, y_atk, pt_atk,
+                    true_subkey, subkey_idx, self.metric_type,
+                    self.atk_set_size, self.n_atk_folds, seed, shuffle,
+                    balanced
                 )
                 for i in range(len(self.population))
             ]
@@ -184,8 +179,9 @@ class GeneticAlgorithm:
             # Run fitness evaluations sequentially
             for (i, indiv) in enumerate(self.population):
                 indiv.fitness = self.fitnesses[i] = multifold_fitness_eval(
-                    indiv.weights, atk_sets, true_subkey, subkey_idx,
-                    self.metric_type, self.atk_set_size
+                    indiv.weights, x_atk, y_atk, pt_atk, true_subkey,
+                    subkey_idx, self.metric_type, self.atk_set_size,
+                    self.n_atk_folds, seed, shuffle, balanced
                 )
 
     def adjust_fitnesses(self, fi_decay=0.2):
@@ -389,8 +385,9 @@ def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx,
     )
 
 
-def multifold_fitness_eval(weights, atk_sets, true_subkey, subkey_idx,
-                           metric_type, atk_set_size):
+def multifold_fitness_eval(weights, x_atk, y_atk, pt_atk, true_subkey,
+                           subkey_idx, metric_type, atk_set_size, n_folds,
+                           seed, shuffle=True, balanced=True):
     """
     Evaluates the fitness of an individual by using its weights to construct a
     new NN, which is used to execute an SCA on the given data.
@@ -398,16 +395,22 @@ def multifold_fitness_eval(weights, atk_sets, true_subkey, subkey_idx,
     Returns:
         The key rank obtained with the SCA.
     """
+    np.random.seed(seed)  # Ensure each indiv is evaluated on the same folds
+
     nn = models.NN_LOAD_FUNC()
     nn.set_weights(weights)
 
-    return np.mean([
-        compute_fitness(
-            nn, atk_set[0], atk_set[1], atk_set[2], metric_type, true_subkey,
-            atk_set_size, subkey_idx
+    fitnesses = np.zeros(n_folds, dtype=np.float64)
+    for fold in range(n_folds):
+        x, y, pt = sample_traces(
+            atk_set_size, x_atk, y_atk, pt_atk, shuffle=shuffle,
+            balanced=balanced
         )
-        for atk_set in atk_sets
-    ])
+        fitnesses[fold] = compute_fitness(
+            nn, x, y, pt, metric_type, true_subkey, atk_set_size, subkey_idx
+        )
+
+    return np.mean(fitnesses)
 
 
 def adjust_fitness(fitness, avg_parent_fitness, fi_decay, scaling=0.5):

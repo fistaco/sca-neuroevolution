@@ -1,4 +1,5 @@
 import multiprocessing as mp
+mp.set_start_method("spawn", force=True)
 from time import time
 import os
 import sys
@@ -26,9 +27,10 @@ from experiments import (attack_ascad_with_cnn, compute_memory_requirements,
                          weight_evo_experiment_from_params,
                          small_cnn_sgd_sca, train_first_layer_ascad_mlp,
                          ga_grid_search_parameter_influence_eval,
-                         test_inc_kr_fold_consistency,
+                         test_fitness_function_consistency,
                          attack_chipwhisperer_mlp)
 from models import set_nn_load_func
+set_nn_load_func("mlp_cw")
 from result_processing import combine_grid_search_results
 
 
@@ -43,13 +45,16 @@ def dual_parallel_weight_evo_experiment(args, remote=True):
 
 
 if __name__ == "__main__":
+    # single_weight_evo_grid_search_experiment(
+    #     int(sys.argv[1]), int(sys.argv[2]), remote=False, parallelise=True
+    # )
+
     # dual_parallel_weight_evo_experiment(sys.argv, remote=False)
     # weight_evo_experiment_from_params(sys.argv, remote=True)
     # combine_grid_search_results()
 
-    set_nn_load_func("mlp_ascad")
-    single_ga_experiment(remote_loc=False, use_mlp=True, averaged=False, apply_fi=False, parallelise=False)
+    # single_ga_experiment(remote_loc=False, use_mlp=True, averaged=False, apply_fi=False, parallelise=True)
     # train_first_layer_ascad_mlp()
-    # test_inc_kr_fold_consistency()
-    # attack_chipwhisperer_mlp()
+    # test_fitness_function_consistency()
+    attack_chipwhisperer_mlp(remote=True, train_with_ga=True, ass=2560, folds=50, shuffle=False, balanced=False, psize=78, gens=20, hw=False, fi=False)
     # single_ensemble_experiment()
