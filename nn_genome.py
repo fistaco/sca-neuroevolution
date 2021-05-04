@@ -20,8 +20,8 @@ class NeuralNetworkGenome:
         Sets each weight to a random value in the range [-1, 1).
         """
         for i in range(len(self.weights)):  # Iterate over layers
-            for j in range(self.weights[i].shape[-1]):  # Iterate over weights
-                self.weights[i][..., j] = np.float32(np.random.uniform(-1, 1))
+            shape = self.weights[i].shape
+            self.weights[i] = np.float32(np.random.uniform(-1, 1, shape))
 
     def mutate(self, mut_power, mut_rate, apply_fitness_inheritance=False):
         """
@@ -31,11 +31,11 @@ class NeuralNetworkGenome:
         """
         child = self.clone()
 
-        for i in range(len(self.weights)):  # Iterate over layers
-            for j in range(self.weights[i].shape[-1]):  # Iterate over weights
+        for i in range(len(self.weights)):  # Layer iteration
+            for (j, w) in np.ndenumerate(self.weights[i]):  # Weight iteration
                 if np.random.uniform() < mut_rate:
                     mut_val = np.random.uniform() * 2 * mut_power - mut_power
-                    child.weights[i][..., j] += mut_val
+                    child.weights[i][j] += mut_val
 
         if apply_fitness_inheritance:
             child.avg_parent_fitness = self.fitness
@@ -51,12 +51,12 @@ class NeuralNetworkGenome:
         child = self.clone()
 
         for i in range(len(self.weights)):  # Iterate over layers
-            for j in range(self.weights[i].shape[-1]):  # Iterate over weights
-                other_w = other.weights[i][..., j]
+            for (j, w) in np.ndenumerate(self.weights[i]):  # Weight iteration
+                other_w = other.weights[i][j]
 
                 # Replace with uniform probability
                 if np.random.uniform() < 0.5:
-                    child.weights[i][..., j] = other_w
+                    child.weights[i][j] = other_w
 
         if apply_fitness_inheritance:
             child.avg_parent_fitness = (self.fitness + other.fitness)/2
