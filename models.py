@@ -109,19 +109,19 @@ def load_small_mlp_ascad(trained=False):
     return keras.models.load_model(path, compile=False)
 
 
-def small_mlp_cw(build=False, hw=False):
+def small_mlp_cw(build=False, hw=False, n_dense=2):
     """
     Builds or loads and returns an MLP for the ChipWhisperer data set.
     """
     leakage_str = "hw" if hw else "id"
-    model_str = f"./trained_models/cw_mlp_untrained_{leakage_str}.h5"
+    model_str = f"./trained_models/cw_mlp_untrained_{leakage_str}_{n_dense}.h5"
 
     if build:
         n_output_classes = 256 if not hw else 9
         mlp = keras.Sequential([
             keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(5000,1)),
             keras.layers.Flatten(),
-            keras.layers.Dense(2, activation=tf.nn.selu),
+            keras.layers.Dense(n_dense, activation=tf.nn.selu),
             keras.layers.Dense(n_output_classes, activation=tf.nn.softmax)
         ])
         mlp.save(model_str)

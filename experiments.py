@@ -707,7 +707,7 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
                              remote=False, ass=256, folds=5, shuffle=True,
                              select_fn="roulette_wheel", balanced=True,
                              psize=52, gens=25, hw=False, fi=False,
-                             metric=MetricType.INCREMENTAL_KEYRANK):
+                             metric=MetricType.INCREMENTAL_KEYRANK, n_dense=2):
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
         load_chipwhisperer_data(
             n_train=8000, subkey_idx=1, remote=remote, hw=hw
@@ -720,7 +720,7 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
     # Load and train MLP
     nn = None
     if train_with_ga:
-        nn = small_mlp_cw(build=False)
+        nn = small_mlp_cw(build=False, hw=hw, n_dense=n_dense)
         nn = train_nn_with_ga(
             nn, x_train, y_train, pt_train, k, subkey_idx, atk_set_size=ass,
             select_fn=select_fn, metric_type=metric, parallelise=True,
@@ -731,7 +731,7 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
             apply_fi=fi, hw=hw, balanced=balanced
         )
     else:
-        nn = small_mlp_cw(build=True, hw=hw)
+        nn = small_mlp_cw(build=True, hw=hw, n_dense=n_dense)
         y_train = keras.utils.to_categorical(y_train)
         n_epochs = 50
         batch_size = 50
@@ -743,7 +743,7 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
         nn.save(f"./trained_models/cw_mlp_trained_{suffix}.h5")
 
     kfold_ascad_atk_with_varying_size(
-        52,
+        18,
         nn,
         subkey_idx=subkey_idx,
         experiment_name=exp_name,

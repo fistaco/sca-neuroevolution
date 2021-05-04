@@ -4,17 +4,17 @@ from time import time
 import os
 import sys
 
-os.environ["OPENBLAS_NUM_THREADS"] = "1"
-os.environ["OMP_NUM_THREADS"] = "1"
-os.environ["MKL_NUM_THREADS"] = "1"
-os.environ["VECLIB_MAXIMUM_THREADS"] = "4"
-os.environ["NUMEXPR_NUM_THREADS"] = "4"
+# os.environ["OPENBLAS_NUM_THREADS"] = "1"
+# os.environ["OMP_NUM_THREADS"] = "1"
+# os.environ["MKL_NUM_THREADS"] = "1"
+# os.environ["VECLIB_MAXIMUM_THREADS"] = "4"
+# os.environ["NUMEXPR_NUM_THREADS"] = "4"
 os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
 os.environ["CUDA_VISIBLE_DEVICES"] = "-1"
 
 import tensorflow as tf
-tf.config.threading.set_intra_op_parallelism_threads(2)
-tf.config.threading.set_inter_op_parallelism_threads(1)
+# tf.config.threading.set_intra_op_parallelism_threads(2)
+# tf.config.threading.set_inter_op_parallelism_threads(1)
 
 tf.get_logger().setLevel("ERROR")  # Hides warnings when using small data sets
 from tensorflow import keras
@@ -27,8 +27,9 @@ from experiments import (attack_ascad_with_cnn, compute_memory_requirements,
                          weight_evo_experiment_from_params,
                          small_cnn_sgd_sca, train_first_layer_ascad_mlp,
                          ga_grid_search_parameter_influence_eval,
-                         test_fitness_function_consistency,
+                         test_inc_kr_fold_consistency,
                          attack_chipwhisperer_mlp)
+from metrics import MetricType
 from models import set_nn_load_func
 set_nn_load_func("mlp_cw")
 from result_processing import combine_grid_search_results
@@ -55,6 +56,6 @@ if __name__ == "__main__":
 
     # single_ga_experiment(remote_loc=False, use_mlp=True, averaged=False, apply_fi=False, parallelise=True)
     # train_first_layer_ascad_mlp()
-    # test_fitness_function_consistency()
-    attack_chipwhisperer_mlp(remote=True, train_with_ga=True, ass=2565, folds=50, shuffle=True, balanced=False, psize=78, gens=20, hw=True, fi=False)
+    attack_chipwhisperer_mlp(remote=True, train_with_ga=True, ass=8000, folds=1, shuffle=False, balanced=False, psize=78, gens=150, hw=True, fi=False, metric=MetricType.INCREMENTAL_KEYRANK)
+    # attack_chipwhisperer_mlp(remote=False, train_with_ga=False, hw=False)
     # single_ensemble_experiment()
