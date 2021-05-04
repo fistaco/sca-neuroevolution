@@ -211,11 +211,21 @@ def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
         key_ranks = compute_fold_keyranks(
             7, preds, ptexts, subkey_idx, set_size, true_subkey, False, hw)
 
+        # Adjust for inconsistencies
+        element_wise_remaining_max_replace(key_ranks)
+
         return incremental_keyrank(key_ranks, set_size, preds, true_labels)
     elif metric_type == MetricType.KEYRANK_PROGRESS:
         key_ranks = compute_fold_keyranks(
             7, preds, ptexts, subkey_idx, set_size, true_subkey, verbose=False)
-        krs_20pct_steps = key_ranks[::set_size//8]
+
+        krs_20pct_steps = np.empty(9, dtype=np.uint8)
+        krs_20pct_steps[0] = 128
+        krs_20pct_steps[1:] = np.clip(key_ranks[::(set_size//8) - 1][1:], 128)
+
+        # Adjust for inconsistencies
+        element_wise_remaining_max_replace(krs_20pct_steps)
+
         return np.mean(np.diff(krs_20pct_steps.astype(np.int16)))
     else:
         print("Encountered invalid metric type. Quitting.")
@@ -425,7 +435,7 @@ def calc_min_fitness(metric_type):
         MetricType.KEYRANK_AND_ACCURACY: -1,
         MetricType.ACCURACY: 0,
         MetricType.INCREMENTAL_KEYRANK: 0,
-        MetricType.KEYRANK_PROGRESS: -2.5,
+        MetricType.KEYRANK_PROGRESS: -777,
     }
     return mapping[metric_type]
 
@@ -549,3 +559,16 @@ def first_zero_value_idx(a, a_len=None):
     finds the index in array a where value 0 first appears.
     """
     return first_idx_with_value(a, 0, a_len)
+
+
+def element_wise_remaining_max_replace(a):
+    """
+    Replaces each element of `a` with the maximum value of all numbers after
+    that element in `a`.
+    """
+    max_n = 0
+    for i in range(len(a))[::-1]:
+        if a[i] > max_n:
+            max_n = a[i]
+        else:
+            a[i] = max_n

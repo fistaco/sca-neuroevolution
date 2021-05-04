@@ -706,7 +706,8 @@ def attack_ascad_with_cnn(subkey_idx=2, atk_set_size=10000, scale=True):
 def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
                              remote=False, ass=256, folds=5, shuffle=True,
                              select_fn="roulette_wheel", balanced=True,
-                             psize=52, gens=25, hw=False, fi=False):
+                             psize=52, gens=25, hw=False, fi=False,
+                             metric=MetricType.INCREMENTAL_KEYRANK):
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
         load_chipwhisperer_data(
             n_train=8000, subkey_idx=1, remote=remote, hw=hw
@@ -722,12 +723,12 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
         nn = small_mlp_cw(build=False)
         nn = train_nn_with_ga(
             nn, x_train, y_train, pt_train, k, subkey_idx, atk_set_size=ass,
-            select_fn=select_fn, metric_type=MetricType.INCREMENTAL_KEYRANK,
-            parallelise=True, shuffle_traces=shuffle, n_atk_folds=folds,
-            remote=remote, t_size=3, max_gens=gens, pop_size=psize,
-            crossover_rate=0.25, plot_fit_progress=True, exp_name=exp_name,
-            debug=False, truncation_proportion=0.6, mut_power=0.04,
-            mut_rate=0.05, apply_fi=fi, hw=hw, balanced=balanced
+            select_fn=select_fn, metric_type=metric, parallelise=True,
+            shuffle_traces=shuffle, n_atk_folds=folds, remote=remote, t_size=3,
+            max_gens=gens, pop_size=psize, crossover_rate=0.25,
+            plot_fit_progress=True, exp_name=exp_name, debug=False,
+            truncation_proportion=0.6, mut_power=0.04, mut_rate=0.05,
+            apply_fi=fi, hw=hw, balanced=balanced
         )
     else:
         nn = small_mlp_cw(build=True, hw=hw)
