@@ -137,7 +137,7 @@ dmypy.json
 # Cython debug symbols
 cython_debug/
 
-# Overly large amounts of result files
+# Overly large (amounts of) result files
 fig/
 results/
 grid-search-results/
@@ -147,5 +147,10 @@ ga-grid-search-best-networks-data-prebugfix/
 # VS Code
 .vscode/
 
-# Scripts that are only meant for working from home (i.e. on Windows)
+# Scripts and files that are only meant for working locally
 *.ps1
+local_test_vars.py
+test.py
+
+# Job scripts
+job_scripts/
