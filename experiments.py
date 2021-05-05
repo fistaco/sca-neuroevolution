@@ -28,7 +28,7 @@ from models import (build_small_cnn_ascad,
                     build_small_mlp_ascad_trainable_first_layer,
                     load_nn_from_experiment_results, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
-                    small_mlp_cw)
+                    small_mlp_cw, mini_mlp_cw)
 from nn_genome import NeuralNetworkGenome
 from plotting import (plot_gens_vs_fitness, plot_n_traces_vs_key_rank,
                       plot_var_vs_key_rank, plot_2d, plot_3d)
@@ -80,7 +80,7 @@ def single_weight_evo_grid_search_experiment(
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
         load_chipwhisperer_data(n_train=8000, subkey_idx=1, remote=remote)
     k_train = k_atk = k
-    nn = models.NN_LOAD_FUNC()
+    nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
 
     # Generate the remaining arguments using the given experiment index
     (ps, mp, mr, mpdr, fdr, ass, sf, mt, n_folds, fi, bt, tp, cor) = \
@@ -160,7 +160,7 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
                shuffle_traces=True, balanced=balanced_traces)
 
     # Create a new model from the best individual's weights and evaluate it
-    nn = models.NN_LOAD_FUNC()
+    nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
     nn.set_weights(best_indiv.weights)
 
     # Evaluate the best indiv by computing INC_KR on 100 folds of the test set
@@ -189,7 +189,7 @@ def ga_grid_search_find_best_network():
         key_rank_zero_indivs = pickle.load(f)
     nns = np.empty(len(key_rank_zero_indivs), dtype=object)
     for i in range(len(nns)):
-        nns[i] = models.NN_LOAD_FUNC()
+        nns[i] = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
         nns[i].set_weights(key_rank_zero_indivs[i][0].weights)
 
     # Load data
@@ -267,7 +267,7 @@ def ga_grid_search_best_network_eval():
     with open("res/ga_gs_best_indiv.pickle", "rb") as f:
         # Save as (indiv, experiment_name)
         (indiv, exp_name) = pickle.load(f)
-    nn = models.NN_LOAD_FUNC()
+    nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
     nn.set_weights(indiv.weights)
 
     # Load data
@@ -298,7 +298,7 @@ def ensemble_atk_with_best_grid_search_networks(top_n=5):
     with open("res/ga_gs_best_networks_avg_key_ranks.pickle", "rb") as f:
         avg_key_ranks = pickle.load(f)
     top_five_idxs = np.argsort(avg_key_ranks)[:top_n]
-    nns = [models.NN_LOAD_FUNC() for i in range(top_n)]
+    nns = [models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS) for i in range(top_n)]
     for i in range(top_n):
         indiv = key_rank_zero_indivs[top_five_idxs[i]][0]
         nns[i].set_weights(indiv.weights)
@@ -420,7 +420,7 @@ def single_ga_experiment(remote_loc=False, use_mlp=False, averaged=False,
     x_atk = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
 
     # Train the CNN by running it through the GA
-    nn = models.NN_LOAD_FUNC()
+    nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
 
     pop_size = 52
     atk_set_size = 1024
@@ -499,7 +499,7 @@ def averaged_ga_experiment(max_gens, pop_size, mut_power, mut_rate,
                    subkey_i=subkey_idx)
 
         # Create a new model from the best individual's weights and evaluate it
-        cnn = models.NN_LOAD_FUNC()
+        cnn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
         cnn.set_weights(best_indiv.weights)
         key_rank = exec_sca(cnn, x_test, y_test, ptexts_test, true_atk_subkey)
 
@@ -565,7 +565,7 @@ def single_ensemble_experiment():
     # Extract NNs from GA results
     nns = np.empty(n_indivs, dtype=object)
     for i in range(n_indivs):
-        nns[i] = models.NN_LOAD_FUNC()
+        nns[i] = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
         nns[i].set_weights(top_indivs[i].weights)
 
     ensemble_model_sca(
@@ -707,7 +707,8 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
                              remote=False, ass=256, folds=5, shuffle=True,
                              select_fn="roulette_wheel", balanced=True,
                              psize=52, gens=25, hw=False, fi=False,
-                             metric=MetricType.INCREMENTAL_KEYRANK, n_dense=2):
+                             metric=MetricType.INCREMENTAL_KEYRANK, n_dense=2,
+                             gen_sgd_train=False):
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
         load_chipwhisperer_data(
             n_train=8000, subkey_idx=1, remote=remote, hw=hw
@@ -720,7 +721,8 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
     # Load and train MLP
     nn = None
     if train_with_ga:
-        nn = small_mlp_cw(build=False, hw=hw, n_dense=n_dense)
+        # nn = small_mlp_cw(build=False, hw=hw, n_dense=n_dense)
+        nn = mini_mlp_cw(build=False, hw=hw)
         nn = train_nn_with_ga(
             nn, x_train, y_train, pt_train, k, subkey_idx, atk_set_size=ass,
             select_fn=select_fn, metric_type=metric, parallelise=True,
@@ -728,22 +730,23 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
             max_gens=gens, pop_size=psize, crossover_rate=0.25,
             plot_fit_progress=True, exp_name=exp_name, debug=False,
             truncation_proportion=0.6, mut_power=0.04, mut_rate=0.05,
-            apply_fi=fi, hw=hw, balanced=balanced
+            apply_fi=fi, hw=hw, balanced=balanced, gen_sgd_train=gen_sgd_train
         )
     else:
-        nn = small_mlp_cw(build=True, hw=hw, n_dense=n_dense)
+        # nn = small_mlp_cw(build=True, hw=hw, n_dense=n_dense)
+        nn = mini_mlp_cw(build=True, hw=hw)
         y_train = keras.utils.to_categorical(y_train)
         n_epochs = 50
         batch_size = 50
-        loss_fn = tf.keras.losses.CategoricalCrossentropy()
         optimizer = tf.keras.optimizers.Adam(learning_rate=5e-3)
+        loss_fn = tf.keras.losses.CategoricalCrossentropy()
         nn.compile(optimizer, loss_fn)
         history = nn.fit(x_train, y_train, batch_size, n_epochs)
     if save:
         nn.save(f"./trained_models/cw_mlp_trained_{suffix}.h5")
 
     kfold_ascad_atk_with_varying_size(
-        18,
+        52,
         nn,
         subkey_idx=subkey_idx,
         experiment_name=exp_name,
@@ -785,7 +788,7 @@ def test_fitness_function_consistency(nn_quality="medium"):
     n_indivs = 10
     # Load networks according to desired network quality
     if nn_quality == "low":  # completely random networks
-        base_weights = models.NN_LOAD_FUNC().get_weights()
+        base_weights = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS).get_weights()
         indivs = [NeuralNetworkGenome(base_weights) for _ in range(n_indivs)]
         for indiv in indivs:
             indiv.random_weight_init()

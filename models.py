@@ -131,6 +131,30 @@ def small_mlp_cw(build=False, hw=False, n_dense=2):
     return mlp
 
 
+def mini_mlp_cw(build=False, hw=True):
+    """
+    Builds and returns an MLP for the ChipWhisperer data set with fewer than
+    2000 weights by stacking 2 pooling layers.
+    """
+    leakage_str = "hw" if hw else "id"
+    model_str = f"./trained_models/mini_cw_mlp_2kw_{leakage_str}.h5"
+
+    if build:
+        n_output_classes = 256 if not hw else 9
+        mlp = keras.Sequential([
+            keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(5000,1)),
+            keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(2500,1)),
+            keras.layers.Flatten(),
+            keras.layers.Dense(1, activation=tf.nn.selu),
+            keras.layers.Dense(n_output_classes, activation=tf.nn.softmax)
+        ])
+        mlp.save(model_str)
+    else:
+        return keras.models.load_model(model_str, compile=False)
+
+    return mlp
+
+
 def build_small_cnn_ascad_trainable_conv():
     """
     Builds and returns a CNN where only the CONV layer is trainable. Note that
@@ -222,13 +246,16 @@ def load_nn_from_experiment_results(experiment_name, load_model_function):
     return nn
 
 
-def set_nn_load_func(nn_str):
+def set_nn_load_func(nn_str, args=()):
     global NN_LOAD_FUNC
+    global NN_LOAD_ARGS
 
     mapping = {
         "mlp_ascad": load_small_mlp_ascad,
         "cnn_ascad": load_small_cnn_ascad_no_batch_norm,
-        "mlp_cw": small_mlp_cw
+        "mlp_cw": small_mlp_cw,
+        "mini_mlp_cw": mini_mlp_cw
     }
 
     NN_LOAD_FUNC = mapping[nn_str]
+    NN_LOAD_ARGS = args

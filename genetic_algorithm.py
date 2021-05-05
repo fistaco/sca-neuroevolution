@@ -40,6 +40,7 @@ class GeneticAlgorithm:
         self.parallelise = parallelise
         self.apply_fi = apply_fitness_inheritance
         self.metric_type = metric_type
+        self.gen_sgd_train = gen_sgd_train
 
         # Maintain the population and all offspring in self.population
         # The offspring occupy the second half of the array
@@ -85,8 +86,8 @@ class GeneticAlgorithm:
         # Ensure we're not attacking multiple unshuffled folds
         assert self.n_atk_folds == 1 or shuffle_traces, "Using static folds"
 
-        # if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
-        #     y_atk_full = tf.keras.utils.to_categorical(y_atk_full, 256)
+        if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
+            y_atk = tf.keras.utils.to_categorical(y_atk, (9 if hw else 256))
 
         self.initialise_population(nn)
 
@@ -98,8 +99,11 @@ class GeneticAlgorithm:
         while gen < self.max_gens and best_fitness > self.min_fitness:
             seed = gen if self.n_atk_folds > 1 else 77
 
-            if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
-                y_atk = tf.keras.utils.to_categorical(y_atk, 256)
+            # if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
+            #     y_atk = tf.keras.utils.to_categorical(y_atk,(9 if hw else 256))
+
+            if self.gen_sgd_train:
+                self.train_indivs_with_sgd(x_atk, y_atk, seed=seed)
 
             # Evaluate the fitness of each individual
             self.evaluate_fitness(x_atk, y_atk, pt_atk, k_atk, subkey_i, seed,
@@ -326,6 +330,31 @@ class GeneticAlgorithm:
         
         return offspring
 
+    def train_indivs_with_sgd(self, x_atk, y_atk, seed):
+        """
+        Trains each individual in the population on a sample from the given
+        attack set for a small amount of epochs.
+        """
+        if self.parallelise:
+            # Set up a tuple of arguments for each concurrent process
+            argss = [
+                (
+                    self.population[i].weights, x_atk, y_atk,
+                    self.atk_set_size, seed
+                )
+                for i in range(len(self.population))
+            ]
+            indiv_weightss = self.pool.starmap(sgd_train, argss)
+
+            for i in range(len(self.population)):
+                self.population[i].weights = indiv_weightss[i]
+        else:
+            # Run fitness evaluations sequentially
+            for indiv in self.population:
+                indiv.weights = sgd_train(
+                    indiv.weights, x_atk, y_atk, self.atk_set_size, seed
+                )
+
     def get_results(self):
         """
         Returns the results, i.e. the best individual, the best fitnesses per
@@ -376,7 +405,7 @@ def evaluate_fitness(weights, x_atk, y_atk, ptexts, true_subkey, subkey_idx,
     Returns:
         The key rank obtained with the SCA.
     """
-    nn = models.NN_LOAD_FUNC()
+    nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
     nn.set_weights(weights)
 
     return compute_fitness(
@@ -397,7 +426,7 @@ def multifold_fitness_eval(weights, x_atk, y_atk, pt_atk, true_subkey,
     """
     np.random.seed(seed)  # Ensure each indiv is evaluated on the same folds
 
-    nn = models.NN_LOAD_FUNC()
+    nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
     nn.set_weights(weights)
 
     fitnesses = np.zeros(n_folds, dtype=np.float64)
@@ -423,6 +452,27 @@ def adjust_fitness(fitness, avg_parent_fitness, fi_decay, scaling=0.5):
     return scaling*(
         fitness + avg_parent_fitness * (1 - fi_decay)
     )
+
+
+def sgd_train(weights, x_train, y_train, train_set_size, seed, epochs=5):
+    """
+    Trains the given NN with a default scheme for a given amount of epochs and
+    returns the resulting weights.
+    """
+    np.random.seed(seed)  # Ensure each indiv is trained on the same fold
+
+    nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
+    nn.set_weights(weights)
+
+    x, y = sample_data(train_set_size, x_train, y_train)
+
+    y_cat = tf.keras.utils.to_categorical(y)
+    optimizer = tf.keras.optimizers.Adam(learning_rate=5e-3)
+    loss_fn = tf.keras.losses.CategoricalCrossentropy()
+    nn.compile(optimizer, loss_fn)
+    history = nn.fit(x, y_cat, batch_size=50, epochs=epochs, verbose=0)
+
+    return nn.get_weights()
 
 
 def train_nn_with_ga(
@@ -452,7 +502,8 @@ def train_nn_with_ga(
         exp_name="",
         debug=False,
         balanced=True,
-        hw=False
+        hw=False,
+        gen_sgd_train=False
     ):
     """
     Trains the weights of the given NN on the given data set by running it
@@ -477,7 +528,8 @@ def train_nn_with_ga(
         metric_type,
         n_atk_folds=n_atk_folds,
         remote=remote,
-        t_size=t_size
+        t_size=t_size,
+        gen_sgd_train=gen_sgd_train
     )
 
     # Obtain the best network resulting from the GA

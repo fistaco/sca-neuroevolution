@@ -217,11 +217,11 @@ def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
         return incremental_keyrank(key_ranks, set_size, preds, true_labels)
     elif metric_type == MetricType.KEYRANK_PROGRESS:
         key_ranks = compute_fold_keyranks(
-            7, preds, ptexts, subkey_idx, set_size, true_subkey, verbose=False)
+            7, preds, ptexts, subkey_idx, set_size, true_subkey, False, hw)
 
         krs_20pct_steps = np.empty(9, dtype=np.uint8)
         krs_20pct_steps[0] = 128
-        krs_20pct_steps[1:] = np.clip(key_ranks[::(set_size//8) - 1][1:], 128)
+        krs_20pct_steps[1:] = np.clip(key_ranks[::(set_size//8) - 1][1:], None, 128)
 
         # Adjust for inconsistencies
         element_wise_remaining_max_replace(krs_20pct_steps)
@@ -400,7 +400,7 @@ def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, nn, fi, bt, tp,
         fi: Fitness inheritance on/off.
         bt: Balanced trace samples on/off.
         tp: Truncation proportion.
-        cor: Crossover rate/
+        cor: Crossover rate.
     """
     sf_str = f"{sf[0]}sel"
     fi_str = "fi" if fi else "nofi"
@@ -434,6 +434,7 @@ def calc_min_fitness(metric_type):
         MetricType.KEYRANK: 0,
         MetricType.KEYRANK_AND_ACCURACY: -1,
         MetricType.ACCURACY: 0,
+        MetricType.CATEGORICAL_CROSS_ENTROPY: 0,
         MetricType.INCREMENTAL_KEYRANK: 0,
         MetricType.KEYRANK_PROGRESS: -777,
     }
@@ -489,10 +490,10 @@ def gen_mini_grid_search_arg_lists():
     mut_rates = [0.04, 0.07, 0.10]  # 3 values
     mut_pow_dec_rates = [0.99, 0.999]  # 2 values
     fi_dec_rates = [0.2]
-    atk_set_sizes = [2560]
+    atk_set_sizes = [8000]
     selection_methods = ["tournament", "roulette_wheel"]  # 2 values
     metrics = [MetricType.INCREMENTAL_KEYRANK]
-    fold_amnts = [50]
+    fold_amnts = [1]
     apply_fi_modes = [False]
     balanced_traces = [False]
     trunc_proportions = [0.5, 1.0]  # 2 values
@@ -572,3 +573,13 @@ def element_wise_remaining_max_replace(a):
             max_n = a[i]
         else:
             a[i] = max_n
+
+
+def convert_to_hw(labels):
+    """
+    Converts all `labels` to their Hamming weight and returns the set.
+    """
+    for i in range(len(labels)):
+        labels[i] = HW[labels[i]]
+
+    return labels
