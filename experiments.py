@@ -19,7 +19,7 @@ from helpers import (compute_fold_keyranks, compute_mem_req,
                      gen_experiment_name, gen_extended_exp_name,
                      gen_ga_grid_search_arg_lists, kfold_mean_key_ranks,
                      label_to_subkey, kfold_mean_inc_kr,
-                     gen_max_resources_ga_grid_search_arg_lists)
+                     gen_mini_grid_search_arg_lists)
 from metrics import MetricType, keyrank
 import models
 from models import (build_small_cnn_ascad,
@@ -61,14 +61,13 @@ def weight_evo_experiment_from_params(cline_args, remote=True):
 
 
 def single_weight_evo_grid_search_experiment(
-    exp_idx=0, run_idx=0, params=None, remote=True, nn_type="mlp_cw",
-    parallelise=True):
+    exp_idx=0, run_idx=0, params=None, remote=True, parallelise=True, hw=True):
     """
     Executes an averaged GA experiment over 10 runs, where the arguments of the
     GA are determined by the given index for the generated list of GA
     argument tuples.
     """
-    print(f"Starting experiment {exp_idx}/486...")
+    print(f"Starting experiment {exp_idx*5 + run_idx}/720...")
 
     # Load data
     # subkey_idx = 2
@@ -78,22 +77,20 @@ def single_weight_evo_grid_search_experiment(
     #     )
     subkey_idx = 1
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
-        load_chipwhisperer_data(n_train=8000, subkey_idx=1, remote=remote)
+        load_chipwhisperer_data(8000, subkey_idx=1, remote=remote, hw=hw)
     k_train = k_atk = k
     nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
 
     # Generate the remaining arguments using the given experiment index
     (ps, mp, mr, mpdr, fdr, ass, sf, mt, n_folds, fi, bt, tp, cor) = \
-        params or gen_max_resources_ga_grid_search_arg_lists()[exp_idx]
-    ps=5
-    ass=256
-    n_folds=5
+        params or gen_mini_grid_search_arg_lists()[exp_idx]
+
     exp_name = gen_extended_exp_name(
-        ps, mp, mr, mpdr, fdr, ass, sf, mt, nn_type, fi, bt, tp, cor
+        ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor
     )
 
     run_ga_for_grid_search(
-        max_gens=2,
+        max_gens=150,
         pop_size=ps,
         mut_power=mp,
         mut_rate=mr,
@@ -119,7 +116,8 @@ def single_weight_evo_grid_search_experiment(
         run_idx=run_idx,
         experiment_name=exp_name,
         save_results=True,
-        remote=remote
+        remote=remote,
+        hw=hw
     )
 
 def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
@@ -127,7 +125,7 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
            atk_set_size, nn, x_valid, y_valid, ptexts_valid, x_test, y_test,
            ptexts_test, k_valid, k_test, parallelise, apply_fi, select_fun,
            metric_type, balanced_traces, n_folds, run_idx, subkey_idx=1,
-           experiment_name="test", save_results=True, remote=True):
+           experiment_name="test", save_results=True, remote=True, hw=True):
     """
     Runs a one GA experiment with the given parameters and stores the results
     in a directory specific to this experiment.
@@ -157,18 +155,17 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
 
     best_indiv = \
         ga.run(nn, x_valid, y_valid, ptexts_valid, k_valid,
-               shuffle_traces=True, balanced=balanced_traces)
+               shuffle_traces=False, balanced=balanced_traces, hw=hw)
 
     # Create a new model from the best individual's weights and evaluate it
     nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
     nn.set_weights(best_indiv.weights)
 
     # Evaluate the best indiv by computing INC_KR on 100 folds of the test set
-    # TODO: Compute required cluster resources
     y_pred_probs = nn.predict(x_test)
     inc_kr = kfold_mean_inc_kr(
         y_pred_probs, ptexts_test, y_test, k_test, 100, subkey_idx, remote,
-        parallelise=True
+        parallelise=parallelise, hw=hw
     )
 
     if save_results:

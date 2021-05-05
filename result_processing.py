@@ -24,7 +24,7 @@ def combine_grid_search_results():
     df = np.zeros((n_exps*n_repeats, len(ResultCategory)), dtype=object)
     run_nr = 0
     for (exp_idx, args) in enumerate(argss):
-        args = (ps, mp, mr, mpdr, fdr, ass, sf, mt, n_folds, fi, bt, tp, cor)
+        (ps, mp, mr, mpdr, fdr, ass, sf, mt, n_folds, fi, bt, tp, cor) = args
         print(f"Processing results from experiment {exp_idx}/{n_exps - 1}")
 
         name = gen_extended_exp_name(*args)

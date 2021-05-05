@@ -40,7 +40,8 @@ def kfold_mean_inc_kr(y_pred_probs, ptexts, y_true, true_subkey, k, key_idx=2,
         # Compute key ranks for each trace amount in parallel
         shuffled = [shuffle_data(y_pred_probs, ptexts, y_true) for _ in range(k)]
         argss = [
-            (i, shuffled[i][0], shuffled[i][1], key_idx, set_size, true_subkey)
+            (i, shuffled[i][0], shuffled[i][1], key_idx, set_size, true_subkey,
+            False, hw)
             for i in range(k)
         ]
         # Result = 2D array indexed with [fold, trace_idx]
@@ -382,8 +383,7 @@ def gen_experiment_name(pop_size, atk_set_size, select_fun, n_folds=1,
     return f"ps{pop_size}-{atk_set_size}t-{n_folds}f-{sf_str}-{lm_str}"
 
 
-def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, nn, fi, bt, tp,
-                          cor, hw=False):
+def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor):
     """
     Generates an experiment name for a GA run using the given arguments.
 
@@ -396,7 +396,6 @@ def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, nn, fi, bt, tp,
         ass: Attack set size.
         sf: Selection function.
         mt: Metric type.
-        nn: Neural network model type.
         fi: Fitness inheritance on/off.
         bt: Balanced trace samples on/off.
         tp: Truncation proportion.
@@ -405,10 +404,8 @@ def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, nn, fi, bt, tp,
     sf_str = f"{sf[0]}sel"
     fi_str = "fi" if fi else "nofi"
     bt_str = "balnc" if bt else "rndtr"
-    lm_str = "hw" if hw else "id"
     return f"ps{ps*2}-mp{mp}-mr{mr}-mpdr{mpdr}-fdr{fdr}-ass{ass}-" + \
-           f"{sf_str}-tp{tp}-mt_{mt.id()}-{nn}-{fi_str}-{bt_str}-cor{cor}-" + \
-           f"{lm_str}"
+           f"{sf_str}-tp{tp}-mt_{mt.id()}-{fi_str}-{bt_str}-cor{cor}"
 
 
 def calc_max_fitness(metric_type):
@@ -483,9 +480,10 @@ def gen_mini_grid_search_arg_lists():
     Returns a list of lists, where each inner list contains arguments for a
     single grid search run for the weight evolution GA experiments.
 
-    These argument combinations result in 144 configurations.
+    These argument combinations result in 144 configurations. Using 52 cores,
+    each of these experiments can take up to 190GB RAM.
     """
-    pop_sizes = [78]
+    pop_sizes = [182]
     mut_pows = [0.03, 0.06, 0.09]  # 3 values
     mut_rates = [0.04, 0.07, 0.10]  # 3 values
     mut_pow_dec_rates = [0.99, 0.999]  # 2 values
