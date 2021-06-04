@@ -177,13 +177,15 @@ def compute_fold_keyranks(fold, y_pred_probs, atk_ptexts, subkey_idx,
 
 
 def compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey,
-                    atk_set_size, subkey_idx=2, hw=False):
+                    atk_set_size, subkey_idx=2, hw=False, preds=None):
     """
     Executes a side-channel attack on the given traces using the given neural
     network and uses the obtained prediction probabilities to compute the key
     rank and/or accuracy.
+
+    The `preds` argument allows precomputed predictions to be provided.
     """
-    y_pred_probs = nn.predict(x_atk)
+    y_pred_probs = preds if preds is not None else nn.predict(x_atk)
     return evaluate_preds(
         y_pred_probs, metric_type, ptexts, true_subkey, y_atk, atk_set_size,
         subkey_idx, hw
@@ -412,13 +414,13 @@ def calc_max_fitness(metric_type):
     """
     Returns the maximum fitness based on the given metric type.
     """
-    return 100 if metric_type == MetricType.ACCURACY else 255
     mapping = {
         MetricType.KEYRANK: 255,
         MetricType.KEYRANK_AND_ACCURACY: 255,
         MetricType.ACCURACY: 100,
+        MetricType.CATEGORICAL_CROSS_ENTROPY: np.inf,
         MetricType.INCREMENTAL_KEYRANK: 3,
-        MetricType.KEYRANK_PROGRESS: np.inf,
+        MetricType.KEYRANK_PROGRESS: np.inf
     }
     return mapping[metric_type]
 
@@ -489,7 +491,7 @@ def gen_mini_grid_search_arg_lists():
     mut_pow_dec_rates = [0.99, 0.999]  # 2 values
     fi_dec_rates = [0.2]
     atk_set_sizes = [8000]
-    selection_methods = ["tournament", "roulette_wheel"]  # 2 values
+    selection_methods = ["tournament"]
     metrics = [MetricType.INCREMENTAL_KEYRANK]
     fold_amnts = [1]
     apply_fi_modes = [False]
@@ -573,11 +575,21 @@ def element_wise_remaining_max_replace(a):
             a[i] = max_n
 
 
-def convert_to_hw(labels):
+def neat_nn_predictions(nn, inputs, hw=True):
     """
-    Converts all `labels` to their Hamming weight and returns the set.
+    Runs the given NEAT NN on the given inputs and returns an array containing
+    an output probability array for each input.
     """
-    for i in range(len(labels)):
-        labels[i] = HW[labels[i]]
+    n_classes = 9 if hw else 256
 
-    return labels
+    outputs = np.zeros((len(inputs), n_classes), dtype=np.float32)
+    for (i, x) in enumerate(inputs):
+        zs = nn.activate(x)
+
+        # Manually apply softmax
+        e_pows = [np.e**z for z in zs]
+        e_pows_sum = sum(e_pows)
+        for j in range(n_classes):
+            outputs[i, j] = e_pows[j]/e_pows_sum
+
+    return outputs
