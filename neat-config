@@ -1,0 +1,75 @@
+[NEAT]
+fitness_criterion      = min
+fitness_threshold      = 0.0
+no_fitness_termination = True
+pop_size               = 6
+reset_on_extinction    = False
+
+[DefaultStagnation]
+species_fitness_func = mean
+max_stagnation       = 15
+species_elitism      = 1
+
+[DefaultReproduction]
+elitism = 1
+survival_threshold = 0.2
+min_species_size   = 2
+
+[DefaultGenome]
+activation_default     = selu
+activation_mutate_rate = 0.0
+activation_options     = selu
+
+aggregation_default     = sum
+aggregation_mutate_rate = 0.0
+aggregation_options     = sum
+
+bias_init_mean          = 0.0
+bias_init_stdev         = 1.0
+bias_init_type          = gaussian
+bias_max_value          = 40.0
+bias_min_value          = -40.0
+
+bias_mutate_power       = 0.2
+bias_mutate_rate        = 0.5
+bias_replace_rate       = 0.1
+
+compatibility_disjoint_coefficient = 1.0
+compatibility_weight_coefficient   = 0.5
+
+conn_add_prob           = 0.1
+conn_delete_prob        = 0.5
+
+enabled_default         = True
+enabled_mutate_rate     = 0.02
+enabled_rate_to_false_add = 0.0
+enabled_rate_to_true_add = 0.0
+
+feed_forward            = True
+initial_connection      = full_nodirect
+
+node_add_prob           = 0.1
+node_delete_prob        = 0.05
+
+num_hidden              = 1
+num_inputs              = 5000
+num_outputs             = 9
+
+response_init_mean      = 1.0
+response_init_stdev     = 0.0
+response_max_value      = 40.0
+response_min_value      = -40.0
+response_mutate_power   = 0.0
+response_mutate_rate    = 0.0
+response_replace_rate   = 0.0
+
+weight_init_mean        = 0.0
+weight_init_stdev       = 1.0
+weight_max_value        = 40
+weight_min_value        = -40
+weight_mutate_power     = 0.3
+weight_mutate_rate      = 0.5
+weight_replace_rate     = 0.1
+
+[DefaultSpeciesSet]
+compatibility_threshold = 2.0
