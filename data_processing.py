@@ -7,6 +7,19 @@ from sklearn import preprocessing
 from constants import HW
 
 
+def load_data(dataset_name, hw=False, remote=False):
+    load_funcs = {
+        "ascad": load_prepared_ascad_vars,
+        "ascad_desync50": 7,
+        "ascad_desync100": 7,
+        "cw": load_chipwhisperer_data,
+        "dpav4": load_dpav4
+    }
+
+    # Load (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk)
+    return load_funcs[dataset_name](hw=hw, remote=remote)
+
+
 def load_ascad_data(data_filepath="./../ASCAD_data/ASCAD_databases/ASCAD.h5",
                     load_metadata=False, remote_loc=False):
     """
@@ -71,8 +84,9 @@ def load_ascad_atk_variables(subkey_idx=2, for_cnns=True, scale=False):
     return (x_atk, y_atk, target_atk_subkey, atk_ptexts)
 
 
-def load_prepared_ascad_vars(subkey_idx=2, scale=True, use_mlp=False,
-                             remote_loc=False, for_sgd=False):
+def load_prepared_ascad_vars(subkey_idx=2, scale=True, use_mlp=True,
+                             remote=False, for_sgd=False, hw=False,
+                             n_train=45000):
     """
     Loads the ASCAD training and attack traces along with the metadata, applies
     reshaping for CNNs, scales the traces, and returns all relevant variables
@@ -81,9 +95,9 @@ def load_prepared_ascad_vars(subkey_idx=2, scale=True, use_mlp=False,
     Note that y_train is not converted for training with SGD.
     """
     (x_train, y_train, x_atk, y_atk, train_meta, atk_meta) = \
-        load_ascad_data(load_metadata=True, remote_loc=remote_loc)
+        load_ascad_data(load_metadata=True, remote_loc=remote)
     original_input_shape = (700, 1)
-    x_train, y_train = x_train[:45000], y_train[:45000]
+    x_train, y_train = x_train[:n_train], y_train[:n_train]
 
     # Declare easily accessible variables for relevant metadata
     target_train_subkey = train_meta['key'][0][subkey_idx]
@@ -104,12 +118,36 @@ def load_prepared_ascad_vars(subkey_idx=2, scale=True, use_mlp=False,
     x_train = x_train.reshape((x_train.shape[0], x_train.shape[1], 1))
     x_atk = x_atk.reshape((x_atk.shape[0], x_atk.shape[1], 1))
 
+    if hw:
+        y_train = to_hw(y_train)
+        y_atk = to_hw(y_atk)
+
     return (x_train, y_train, train_ptexts, target_train_subkey, x_atk, \
         y_atk, atk_ptexts, target_atk_subkey)
 
 
-def load_dpav4(subkey_idx=0):
-    pass
+def load_dpav4(subkey_idx=0, hw=False, remote=False):
+    dir_path = "./../dpav4/" if not remote \
+        else "/tudelft.net/staff-bulk/ewi/insy/CYS/spicek/fschijlen/dpav4/"
+
+    x_train = np.load(f"{dir_path}profiling_traces_dpav4.npy")
+    y_train = np.squeeze(
+        np.load(f"{dir_path}profiling_labels_dpav4.npy").astype(np.uint8))
+    pt_train = np.load(f"{dir_path}profiling_plaintext_dpav4.npy") \
+        .astype(np.uint8)[:, subkey_idx]
+    x_atk = np.load(f"{dir_path}attack_traces_dpav4.npy")
+    y_atk = np.squeeze(
+        np.load(f"{dir_path}attack_labels_dpav4.npy").astype(np.uint8))
+    pt_atk = np.load(f"{dir_path}attack_plaintext_dpav4.npy") \
+        .astype(np.uint8)[:, subkey_idx]
+    k = np.uint8(np.load(f"{dir_path}key.npy")[subkey_idx])
+    m = np.uint8(np.load(f"{dir_path}mask.npy")[subkey_idx])
+
+    if hw:
+        y_train = to_hw(y_train)
+        y_atk = to_hw(y_atk)
+
+    return (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k)
 
 
 def load_chipwhisperer_data(n_train=8000, subkey_idx=1, remote=False,
@@ -244,3 +282,14 @@ def to_uint8(data_set):
     from -128 to 127.
     """
     return (data_set + 128).astype(np.uint8)
+
+
+def to_hw(labels):
+    """
+    Converts all `labels` to their Hamming weight and returns the set.
+    """
+    for i in range(len(labels)):
+        labels[i] = HW[labels[i]]
+
+    return labels
+
