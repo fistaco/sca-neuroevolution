@@ -1,5 +1,10 @@
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.keras import activations
+from tensorflow.python.keras.engine import input_layer
+from tensorflow.python.keras.engine.input_layer import Input
+from tensorflow.python.ops.control_flow_ops import group
+from tensorflow.python.ops.gen_array_ops import split
 
 from helpers import load_model_weights_from_ga_results
 
@@ -131,6 +136,54 @@ def small_mlp_cw(build=False, hw=False, n_dense=2):
     return mlp
 
 
+# TODO: Delete or move stuff below after testing
+import numpy as np  # TODO: Delete after testing
+
+
+def consecutive_int_groups(a, stepsize=1):
+    """
+    Code from username 'unutbu' at https://stackoverflow.com/questions/7352684/how-to-find-the-groups-of-consecutive-elements-in-a-numpy-array
+    """
+    return np.split(a, np.where(np.diff(a) != stepsize)[0] + 1)
+
+
+def small_mlp_cw_func(build=False, hw=False, n_dense=2):
+    """
+    Builds or loads and returns an MLP for the ChipWhisperer data set.
+    """
+    leakage_str = "hw" if hw else "id"
+    model_str = f"./trained_models/cw_mlp_untrained_{leakage_str}_{n_dense}.h5"
+    if build:
+        # Act as if we're given a weight vector & indices to mask
+        connected_input_idxs = np.concatenate(
+            (np.arange(0, 2300), np.arange(2302, 4804), np.arange(4805, 5000))
+        )
+        input_idx_groups = consecutive_int_groups(connected_input_idxs)
+
+        n_output_classes = 256 if not hw else 9
+        inputs = keras.Input(shape=(5000, 1))
+        # x = keras.layers.AveragePooling1D(pool_size=2, strides=2)(inputs)
+        # x = keras.layers.Flatten()(inputs)  # Output shape (None, 5000)
+        # Test splitting functionality
+        # split_inputs = [inputs[:, i*2, :] for i in range(2500)]  # TODO: Optimise this part, e.g. with a masking layer instead of splitting
+
+        # Obtain input layer as separate groups of consecutive input values
+        input_layers = [
+            keras.layers.Flatten()(inputs[:, idxs[0]:(idxs[-1] + 1), :])
+            for idxs in input_idx_groups
+        ]
+        # x = inputs[:, connected_input_idxs, :]  # Desired shape = (None, 1). Strategy to achieve this: filter to (None, n, 1) -> Flatten OR Flatten -> filter from (None, 5000) to (None, n)
+        x = keras.layers.Concatenate()(input_layers)
+        # x = keras.layers.Lambda(lambda l: l[:, :2500], output_shape=(2500,))(x)
+        x = keras.layers.Dense(n_dense, activation=tf.nn.selu, name="dense1")(x)
+        x = keras.layers.Dense(n_output_classes, activation=tf.nn.softmax, name="output")(x)
+        mlp = keras.Model(inputs, x)
+        # mlp.save(model_str)
+    else:
+        return keras.models.load_model(model_str, compile=False)
+    return mlp
+
+
 def mini_mlp_cw(build=False, hw=True):
     """
     Builds and returns an MLP for the ChipWhisperer data set with fewer than
@@ -259,3 +312,30 @@ def set_nn_load_func(nn_str, args=()):
 
     NN_LOAD_FUNC = mapping[nn_str]
     NN_LOAD_ARGS = args
+
+
+class MaskedDense(keras.layers.Dense):
+    """
+    A standard NN layer with the option to mask incoming connections.
+    """
+
+    def __init__(self, units, activation, mask, **kwargs):
+        """
+        Constructs a Dense layer object with `units` neurons and a `mask` array
+        where mask values 1 and 0 represent enabled and disabled connections,
+        respectively.
+        """
+        self.mask = mask
+
+        super(MaskedDense, self).__init__(units, activation, **kwargs)
+
+    def call(self, inputs):
+        self.kernel = self.kernel * self.mask
+        super(MaskedDense, self).call(inputs)
+
+    def weight_count(self):
+        """
+        Returns the true amount of weights connecting to this layer, computed
+        by using the `mask` array provided upon layer construction.
+        """
+        return np.count_nonzero(self.mask*self.kernel)
