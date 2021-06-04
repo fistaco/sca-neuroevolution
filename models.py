@@ -5,8 +5,9 @@ from tensorflow.python.keras.engine import input_layer
 from tensorflow.python.keras.engine.input_layer import Input
 from tensorflow.python.ops.control_flow_ops import group
 from tensorflow.python.ops.gen_array_ops import split
+import numpy as np
 
-from helpers import load_model_weights_from_ga_results
+from helpers import load_model_weights_from_ga_results, consecutive_int_groups
 
 
 def build_small_cnn_ascad():
@@ -134,17 +135,6 @@ def small_mlp_cw(build=False, hw=False, n_dense=2):
         return keras.models.load_model(model_str, compile=False)
 
     return mlp
-
-
-# TODO: Delete or move stuff below after testing
-import numpy as np  # TODO: Delete after testing
-
-
-def consecutive_int_groups(a, stepsize=1):
-    """
-    Code from username 'unutbu' at https://stackoverflow.com/questions/7352684/how-to-find-the-groups-of-consecutive-elements-in-a-numpy-array
-    """
-    return np.split(a, np.where(np.diff(a) != stepsize)[0] + 1)
 
 
 def small_mlp_cw_func(build=False, hw=False, n_dense=2):

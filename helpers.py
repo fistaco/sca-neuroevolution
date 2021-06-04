@@ -593,3 +593,12 @@ def neat_nn_predictions(nn, inputs, hw=True):
             outputs[i, j] = e_pows[j]/e_pows_sum
 
     return outputs
+
+
+def consecutive_int_groups(a, stepsize=1):
+    """
+    Returns a list containing arrays of consecutive numbers in `a`.
+
+    This one-liner was created by username 'unutbu' at https://stackoverflow.com/questions/7352684/how-to-find-the-groups-of-consecutive-elements-in-a-numpy-array
+    """
+    return np.split(a, np.where(np.diff(a) != stepsize)[0] + 1)

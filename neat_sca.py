@@ -8,7 +8,8 @@ from tensorflow import keras
 
 from data_processing import (load_chipwhisperer_data, load_prepared_ascad_vars,
                              sample_traces)
-from helpers import get_pool_size, neat_nn_predictions, compute_fitness
+from helpers import (get_pool_size, neat_nn_predictions, compute_fitness,
+                     consecutive_int_groups)
 from metrics import MetricType
 
 
@@ -108,7 +109,7 @@ def multifold_genome_fitness_eval(genome, config):
     return float(np.mean(fitnesses))
 
 
-def genome_to_keras_model(genome, config):
+def genome_to_keras_model(genome, config, use_genome_params=False):
     """
     Converts a NEAT-Python genome instance to a keras model using the keras
     functional API.
@@ -120,55 +121,77 @@ def genome_to_keras_model(genome, config):
 
     n_inputs = config.genome_config.num_inputs
     inputs = keras.Input(shape=(n_inputs, 1))
-    x = keras.layers.Flatten()(inputs)
+    # x = keras.layers.Flatten()(inputs)
 
-    # Store all inputs & intermediate neuron outputs in a dict, represented as
-    # individual keras layers.
-    node_outputs = {
-        -(i + 1): keras.layers.Lambda(lambda l: l[:, i], output_shape=(1,))(x)
-        for i in range(n_inputs)
-    }
+    # # # Store all inputs & intermediate neuron outputs in a dict, represented as
+    # # # individual keras layers.
+    # # node_outputs = {
+    # #     -(i + 1): keras.layers.Lambda(lambda l: l[:, i], output_shape=(1,))(x)
+    # #     for i in range(n_inputs)
+    # # }
 
-    node_configs = np.empty(len(genome.nodes), dtype=object)
+    node_outputs = {}
     for layer in layers:
         for node_id in layer:
-            # Construct incoming connections
-            inc_src_node_ids = []
-            inc_weights = []
+            # Construct connections separately for inputs & hidden nodes
+            inc_input_idxs = []
+            inc_hidden_node_ids = []
+            inc_weights = []  # TODO: Leave weights either unused or optional
             for (conn_id, conn) in genome.connections.items():
                 if not conn.enabled:
                     continue
 
                 start_id, end_id = conn_id
                 if end_id == node_id:
-                    inc_src_node_ids.append(start_id)
-                    inc_weights.append(conn.weight)
+                    # Differentiate between input nodes and hidden nodes
+                    if start_id < 0:
+                        true_idx = -start_id - 1
+                        inc_input_idxs.append(true_idx)
+                    else:
+                        inc_hidden_node_ids.append(start_id)
+
+                    if use_genome_params:
+                        inc_weights.append(conn.weight)
 
             # Ignore nodes without incoming connections
-            if not inc_src_node_ids:
+            if not inc_input_idxs and not inc_hidden_node_ids:
                 continue
 
-            # Set up neuron computation
             node = genome.nodes[node_id]
-            activation = "softmax" if node.activation == "identity" \
-                else node.activation
-            node_configs[node_id] = \
-                (activation, node.bias, inc_src_node_ids, inc_weights)
 
-            # Concatenate layer inputs so they act as a single layer
-            incoming = [node_outputs[i] for i in inc_src_node_ids]
-            incoming_layer = keras.layers.Concatenate()(incoming)
+            # Construct input layer objects to filter disabled connections
+            input_idx_groups = consecutive_int_groups(inc_input_idxs)  # TODO: Determine if this is always sorted
+            input_layers = [
+                keras.layers.Flatten()(inputs[:, idxs[0]:(idxs[-1] + 1), :])
+                for idxs in input_idx_groups
+            ]
 
-            # Treat this neuron as a layer computation
+            # Construct hidden node outputs, which are already layer objects
+            hidden_layers = [node_outputs[i] for i in inc_hidden_node_ids]
+
+            # Concatenate all incoming layers
+            incoming = keras.layers.Concatenate()(input_layers + hidden_layers)
+
+            kernel_init = keras.initializers.he_uniform()
+            bias_init = keras.initializers.zeros()
+
+            if use_genome_params:
+                kernel_init = keras.initializers.Constant(inc_weights)
+                bias_init = keras.initializers.Constant(node.bias)
+
+            # Define the layer computation for this neuron
             node_outputs[node_id] = keras.layers.Dense(
-                1, activation=activation,
-                kernel_initializer=keras.initializers.Constant(inc_weights),
-                bias_initializer=keras.initializers.Constant(node.bias)
-            )(incoming_layer)
+                1, activation=node.activation,
+                kernel_initializer=kernel_init,
+                bias_initializer=bias_init
+            )(incoming)
 
+    # Concatenate outputs so we can apply softmax on the complete layer
     final_outputs = keras.layers.Concatenate()(
         [node_outputs[i] for i in range(config.genome_config.num_outputs)]  # TODO: Test with generator object if this works. Same for previous list usages.
     )
+    final_outputs = keras.layers.Softmax()(final_outputs)
+
     return keras.Model(inputs, final_outputs)
 
 
