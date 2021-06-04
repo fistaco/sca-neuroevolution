@@ -3,6 +3,7 @@ import os
 import pickle
 from time import time
 
+import neat
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
@@ -19,7 +20,7 @@ from helpers import (compute_fold_keyranks, compute_mem_req,
                      gen_experiment_name, gen_extended_exp_name,
                      gen_ga_grid_search_arg_lists, kfold_mean_key_ranks,
                      label_to_subkey, kfold_mean_inc_kr,
-                     gen_mini_grid_search_arg_lists)
+                     gen_mini_grid_search_arg_lists, neat_nn_predictions)
 from metrics import MetricType, keyrank
 import models
 from models import (build_small_cnn_ascad,
@@ -28,11 +29,40 @@ from models import (build_small_cnn_ascad,
                     build_small_mlp_ascad_trainable_first_layer,
                     load_nn_from_experiment_results, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
-                    small_mlp_cw, mini_mlp_cw)
+                    small_mlp_cw, mini_mlp_cw, small_mlp_cw_func)
+from neat_sca import NeatSca
 from nn_genome import NeuralNetworkGenome
 from plotting import (plot_gens_vs_fitness, plot_n_traces_vs_key_rank,
                       plot_var_vs_key_rank, plot_2d, plot_3d)
 from result_processing import ResultCategory, filter_df
+
+
+def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
+                    parallelise=True):
+    subkey_idx = 1
+    (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
+        load_chipwhisperer_data(8000, subkey_idx=1, remote=remote, hw=hw)
+    k_train = k_atk = k
+
+    # Train with NEAT
+    neat_evo = NeatSca(pop_size, max_gens, remote=remote,
+                       parallelise=parallelise)
+    (best_indiv, config) = neat_evo.run(x_train, y_train, pt_train, k, hw)
+
+    nn = neat.nn.FeedForwardNetwork.create(best_indiv, config)
+    preds = neat_nn_predictions(nn, x_atk, hw=hw)
+
+    # Evaluate on test set
+    kfold_ascad_atk_with_varying_size(
+        90,
+        nn,
+        subkey_idx=subkey_idx,
+        experiment_name="neat_test",
+        atk_data=(x_atk, y_atk, k, pt_atk),
+        parallelise=True,
+        hw=hw,
+        preds=preds
+    )
 
 
 def weight_evo_experiment_from_params(cline_args, remote=True):
@@ -67,13 +97,13 @@ def single_weight_evo_grid_search_experiment(
     GA are determined by the given index for the generated list of GA
     argument tuples.
     """
-    print(f"Starting experiment {exp_idx*5 + run_idx}/720...")
+    print(f"Starting experiment {exp_idx*5 + run_idx}/359...")
 
     # Load data
     # subkey_idx = 2
     # (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
     #     load_prepared_ascad_vars(
-    #         subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=remote
+    #         subkey_idx=subkey_idx, scale=True, use_mlp=True, remote=remote
     #     )
     subkey_idx = 1
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
@@ -518,7 +548,7 @@ def single_ensemble_experiment():
     subkey_idx = 2
     (x_train, y_train, train_ptexts, target_train_subkey, x_atk, y_atk, \
         atk_ptexts, target_atk_subkey) = load_prepared_ascad_vars(
-            subkey_idx=subkey_idx, scale=True, use_mlp=False, remote_loc=False
+            subkey_idx=subkey_idx, scale=True, use_mlp=False, remote=False
         )
 
     # Train the CNN by running it through the GA
@@ -657,7 +687,7 @@ def train_first_layer_ascad_mlp():
     subkey_idx = 2
     (x_train, y_train, _, _, x_atk, y_atk, atk_ptexts, target_atk_subkey) = \
         load_prepared_ascad_vars(
-            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=False,
+            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote=False,
             for_sgd=True
         )
 
@@ -705,7 +735,7 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
                              select_fn="roulette_wheel", balanced=True,
                              psize=52, gens=25, hw=False, fi=False,
                              metric=MetricType.INCREMENTAL_KEYRANK, n_dense=2,
-                             gen_sgd_train=False):
+                             gen_sgd_train=False, mut_pow=0.04, mut_rate=0.05):
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
         load_chipwhisperer_data(
             n_train=8000, subkey_idx=1, remote=remote, hw=hw
@@ -720,18 +750,20 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
     if train_with_ga:
         # nn = small_mlp_cw(build=False, hw=hw, n_dense=n_dense)
         nn = mini_mlp_cw(build=False, hw=hw)
+        # nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
         nn = train_nn_with_ga(
             nn, x_train, y_train, pt_train, k, subkey_idx, atk_set_size=ass,
             select_fn=select_fn, metric_type=metric, parallelise=True,
             shuffle_traces=shuffle, n_atk_folds=folds, remote=remote, t_size=3,
             max_gens=gens, pop_size=psize, crossover_rate=0.25,
             plot_fit_progress=True, exp_name=exp_name, debug=False,
-            truncation_proportion=0.6, mut_power=0.04, mut_rate=0.05,
+            truncation_proportion=0.6, mut_power=mut_pow, mut_rate=mut_rate,
             apply_fi=fi, hw=hw, balanced=balanced, gen_sgd_train=gen_sgd_train
         )
     else:
         # nn = small_mlp_cw(build=True, hw=hw, n_dense=n_dense)
-        nn = mini_mlp_cw(build=True, hw=hw)
+        # nn = mini_mlp_cw(build=True, hw=hw)
+        nn = small_mlp_cw_func(build=True, hw=hw, n_dense=n_dense)
         y_train = keras.utils.to_categorical(y_train)
         n_epochs = 50
         batch_size = 50
@@ -743,7 +775,7 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
         nn.save(f"./trained_models/cw_mlp_trained_{suffix}.h5")
 
     kfold_ascad_atk_with_varying_size(
-        52,
+        18,
         nn,
         subkey_idx=subkey_idx,
         experiment_name=exp_name,
@@ -754,14 +786,14 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
 
 
 def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
-    atk_data=None, parallelise=False, remote=False, hw=False):
+    atk_data=None, parallelise=False, remote=False, hw=False, preds=None):
     # Use the given data if possible. Load 10k ASCAD attack traces otherwise.
     (x_atk, y_atk, target_subkey, atk_ptexts) = \
         atk_data if atk_data \
         else load_ascad_atk_variables(for_cnns=True, subkey_idx=2, scale=True)
 
     # Predict outputs for the full set
-    y_pred_probs = nn.predict(x_atk)
+    y_pred_probs = preds if preds is not None else nn.predict(x_atk)
 
     mean_ranks = kfold_mean_key_ranks(
         y_pred_probs, atk_ptexts, target_subkey, k, subkey_idx,
@@ -803,7 +835,7 @@ def test_fitness_function_consistency(nn_quality="medium"):
     subkey_idx = 2
     (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
         load_prepared_ascad_vars(
-            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=False
+            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote=False
         )
 
     # Set up DF
@@ -905,7 +937,7 @@ def test_inc_kr_fold_consistency(nn_quality="medium"):
     subkey_idx = 2
     (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
         load_prepared_ascad_vars(
-            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote_loc=False
+            subkey_idx=subkey_idx, scale=True, use_mlp=True, remote=False
         )
 
     # Set up DF
