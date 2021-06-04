@@ -86,8 +86,8 @@ class GeneticAlgorithm:
         # Ensure we're not attacking multiple unshuffled folds
         assert self.n_atk_folds == 1 or shuffle_traces, "Using static folds"
 
-        if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
-            y_atk = tf.keras.utils.to_categorical(y_atk, (9 if hw else 256))
+        # if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
+        #     y_atk = tf.keras.utils.to_categorical(y_atk, (9 if hw else 256))
 
         self.initialise_population(nn)
 
@@ -436,6 +436,10 @@ def multifold_fitness_eval(weights, x_atk, y_atk, pt_atk, true_subkey,
             atk_set_size, x_atk, y_atk, pt_atk, n_classes, shuffle=shuffle,
             balanced=balanced
         )
+
+        if metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
+            y = tf.keras.utils.to_categorical(y, (9 if hw else 256))
+
         fitnesses[fold] = compute_fitness(
             nn, x, y, pt, metric_type, true_subkey, atk_set_size, subkey_idx,
             hw
