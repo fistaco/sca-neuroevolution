@@ -106,7 +106,7 @@ def multifold_genome_fitness_eval(genome, config):
         fitnesses[i] = compute_fitness(
             nn, x[i], y[i], pt[i], metric, k, len(x), k_idx, g_hw, preds)
 
-    return float(np.mean(fitnesses))
+    return -float(np.mean(fitnesses))
 
 
 def genome_to_keras_model(genome, config, use_genome_params=False):
@@ -170,7 +170,13 @@ def genome_to_keras_model(genome, config, use_genome_params=False):
             hidden_layers = [node_outputs[i] for i in inc_hidden_node_ids]
 
             # Concatenate all incoming layers
-            incoming = keras.layers.Concatenate()(input_layers + hidden_layers)
+            incoming = None
+            if not hidden_layers and len(input_layers) == 1:
+                incoming = input_layers[0]
+            elif not input_layers and len(hidden_layers) == 1:
+                incoming = hidden_layers[0]
+            else:
+                incoming = keras.layers.Concatenate()(input_layers + hidden_layers)
 
             kernel_init = keras.initializers.he_uniform()
             bias_init = keras.initializers.zeros()
