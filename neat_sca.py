@@ -123,13 +123,6 @@ def genome_to_keras_model(genome, config, use_genome_params=False):
     inputs = keras.Input(shape=(n_inputs, 1))
     # x = keras.layers.Flatten()(inputs)
 
-    # # # Store all inputs & intermediate neuron outputs in a dict, represented as
-    # # # individual keras layers.
-    # # node_outputs = {
-    # #     -(i + 1): keras.layers.Lambda(lambda l: l[:, i], output_shape=(1,))(x)
-    # #     for i in range(n_inputs)
-    # # }
-
     node_outputs = {}
     for layer in layers:
         for node_id in layer:
@@ -160,6 +153,7 @@ def genome_to_keras_model(genome, config, use_genome_params=False):
             node = genome.nodes[node_id]
 
             # Construct input layer objects to filter disabled connections
+            inc_input_idxs = np.sort(inc_input_idxs)
             input_idx_groups = consecutive_int_groups(inc_input_idxs)  # TODO: Determine if this is always sorted
             input_layers = [
                 keras.layers.Flatten()(inputs[:, idxs[0]:(idxs[-1] + 1), :])
@@ -178,7 +172,7 @@ def genome_to_keras_model(genome, config, use_genome_params=False):
             else:
                 incoming = keras.layers.Concatenate()(input_layers + hidden_layers)
 
-            kernel_init = keras.initializers.he_uniform()
+            kernel_init = keras.initializers.glorot_uniform()  # TODO: Make informed decision about weight init. Maybe ask Stjepan.
             bias_init = keras.initializers.zeros()
 
             if use_genome_params:
@@ -193,12 +187,14 @@ def genome_to_keras_model(genome, config, use_genome_params=False):
             )(incoming)
 
     # Concatenate outputs so we can apply softmax on the complete layer
-    final_outputs = keras.layers.Concatenate()(
-        [node_outputs[i] for i in range(config.genome_config.num_outputs)]  # TODO: Test with generator object if this works. Same for previous list usages.
-    )
-    final_outputs = keras.layers.Softmax()(final_outputs)
+    outputs = []
+    for i in range(config.genome_config.num_outputs):
+        if i in node_outputs:
+            outputs.append(node_outputs[i])
+    final_output_layer = keras.layers.Concatenate()(outputs)
+    final_output_layer = keras.layers.Softmax()(final_output_layer)
 
-    return keras.Model(inputs, final_outputs)
+    return keras.Model(inputs, final_output_layer)
 
 
 def set_global_data(dataset_name, n_traces, subkey_idx, n_folds=1,
