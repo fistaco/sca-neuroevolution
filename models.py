@@ -146,21 +146,22 @@ def small_mlp_cw_func(build=False, hw=False, n_dense=2):
     model_str = f"./trained_models/cw_mlp_untrained_{leakage_str}_{n_dense}.h5"
     if build:
         # Act as if we're given a weight vector & indices to mask
+        # connected_input_idxs = np.concatenate(
+        #     (np.arange(0, 2300), np.arange(2302, 4804), np.arange(4805, 5000))
+        # )
         connected_input_idxs = np.concatenate(
-            (np.arange(0, 2300), np.arange(2302, 4804), np.arange(4805, 5000))
+            (np.arange(0, 1150), np.arange(1152, 2402), np.arange(2402, 2500))
         )
         input_idx_groups = consecutive_int_groups(connected_input_idxs)
 
         n_output_classes = 256 if not hw else 9
         inputs = keras.Input(shape=(5000, 1))
-        # x = keras.layers.AveragePooling1D(pool_size=2, strides=2)(inputs)
+        pooled = keras.layers.AveragePooling1D(pool_size=2, strides=2)(inputs)
         # x = keras.layers.Flatten()(inputs)  # Output shape (None, 5000)
-        # Test splitting functionality
-        # split_inputs = [inputs[:, i*2, :] for i in range(2500)]  # TODO: Optimise this part, e.g. with a masking layer instead of splitting
 
         # Obtain input layer as separate groups of consecutive input values
         input_layers = [
-            keras.layers.Flatten()(inputs[:, idxs[0]:(idxs[-1] + 1), :])
+            keras.layers.Flatten()(pooled[:, idxs[0]:(idxs[-1] + 1), :])
             for idxs in input_idx_groups
         ]
         # x = inputs[:, connected_input_idxs, :]  # Desired shape = (None, 1). Strategy to achieve this: filter to (None, n, 1) -> Flatten OR Flatten -> filter from (None, 5000) to (None, n)

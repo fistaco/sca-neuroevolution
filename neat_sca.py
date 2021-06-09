@@ -154,12 +154,15 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
     if not layers:
         return None
 
-    n_inputs = config.genome_config.num_inputs
+    n_inputs = config.genome_config.num_inputs if not use_avg_pooling \
+        else config.genome_config.num_inputs*2
     inputs = keras.Input(shape=(n_inputs, 1))
 
+    init_layer = inputs
     if use_avg_pooling:
-        # Assume `n_inputs` is already compatible, i.e. half its normal size
-        inputs = keras.layers.AveragePooling1D(pool_size=2, strides=2)(inputs)
+        init_layer = keras.layers.AveragePooling1D(
+            pool_size=2, strides=2, input_shape=(n_inputs, 1)
+        )(inputs)
 
     node_outputs = {}
     for layer in layers:
@@ -192,9 +195,9 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
 
             # Construct input layer objects to filter disabled connections
             inc_input_idxs = np.sort(inc_input_idxs)
-            input_idx_groups = consecutive_int_groups(inc_input_idxs)  # TODO: Determine if this is always sorted
+            input_idx_groups = consecutive_int_groups(inc_input_idxs)
             input_layers = [
-                keras.layers.Flatten()(inputs[:, idxs[0]:(idxs[-1] + 1), :])
+                keras.layers.Flatten()(init_layer[:, idxs[0]:(idxs[-1] + 1), :])
                 for idxs in input_idx_groups
             ]
 
@@ -210,7 +213,7 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
             else:
                 incoming = keras.layers.Concatenate()(input_layers + hidden_layers)
 
-            kernel_init = keras.initializers.glorot_uniform()  # TODO: Make informed decision about weight init. Maybe ask Stjepan.
+            kernel_init = keras.initializers.glorot_uniform()
             bias_init = keras.initializers.zeros()
 
             if use_genome_params:

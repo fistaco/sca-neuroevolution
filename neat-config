@@ -7,13 +7,13 @@ reset_on_extinction    = False
 
 [DefaultStagnation]
 species_fitness_func = mean
-max_stagnation       = 15
+max_stagnation       = 5
 species_elitism      = 1
 
 [DefaultReproduction]
 elitism = 1
-survival_threshold = 0.2
-min_species_size   = 2
+survival_threshold = 0.5
+min_species_size   = 1
 
 [DefaultGenome]
 activation_default     = selu
@@ -30,26 +30,26 @@ bias_init_type          = gaussian
 bias_max_value          = 40.0
 bias_min_value          = -40.0
 
-bias_mutate_power       = 0.2
-bias_mutate_rate        = 0.5
-bias_replace_rate       = 0.1
+bias_mutate_power       = 0.0
+bias_mutate_rate        = 0.0
+bias_replace_rate       = 0.0
 
 compatibility_disjoint_coefficient = 1.0
-compatibility_weight_coefficient   = 0.5
+compatibility_weight_coefficient   = 0.0
 
-conn_add_prob           = 0.1
-conn_delete_prob        = 0.5
+conn_add_prob           = 1.0
+conn_delete_prob        = 0.0
 
 enabled_default         = True
-enabled_mutate_rate     = 0.02
+enabled_mutate_rate     = 0.0
 enabled_rate_to_false_add = 0.0
 enabled_rate_to_true_add = 0.0
 
 feed_forward            = True
 initial_connection      = full_nodirect
 
-node_add_prob           = 0.1
-node_delete_prob        = 0.05
+node_add_prob           = 1.0
+node_delete_prob        = 0.0
 
 num_hidden              = 1
 num_inputs              = 5000
@@ -67,9 +67,9 @@ weight_init_mean        = 0.0
 weight_init_stdev       = 1.0
 weight_max_value        = 40
 weight_min_value        = -40
-weight_mutate_power     = 0.3
-weight_mutate_rate      = 0.5
-weight_replace_rate     = 0.1
+weight_mutate_power     = 0.0
+weight_mutate_rate      = 0.0
+weight_replace_rate     = 0.0
 
 [DefaultSpeciesSet]
-compatibility_threshold = 2.0
+compatibility_threshold = 3.0
