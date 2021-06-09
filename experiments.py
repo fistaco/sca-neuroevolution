@@ -37,7 +37,7 @@ from result_processing import ResultCategory, filter_df
 
 
 def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
-                    parallelise=True, use_sgd=True, avg_pooling=False,
+                    parallelise=True, use_sgd=True, avg_pooling=True,
                     dataset_name="cw"):
     subkey_idx = 1
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \

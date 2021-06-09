@@ -5,6 +5,7 @@ import neat
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.python.ops.gen_nn_ops import avg_pool
 
 from data_processing import (load_chipwhisperer_data, load_prepared_ascad_vars,
                              sample_traces)
@@ -16,20 +17,25 @@ from metrics import MetricType
 x, y, pt, k, k_idx, g_hw = None, None, None, None, 1, True
 metric = MetricType.CATEGORICAL_CROSS_ENTROPY
 sgd_train = True
+avg_pooling = True
 num_folds = 1
 
 
 class NeatSca:
     def __init__(self, pop_size, max_gens, config_filepath="./neat-config",
-                 remote=False, parallelise=True, use_sgd=True):
+                 remote=False, parallelise=True):
+        global x, g_hw, avg_pooling
+
         self.pop_size = pop_size
         self.max_gens = max_gens
-        self.use_sgd = use_sgd
 
         self.config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
                       neat.DefaultSpeciesSet, neat.DefaultStagnation,
                       config_filepath)
         self.config.pop_size = pop_size
+        self.config.genome_config.num_inputs = len(x[0]) if not avg_pooling \
+            else len(x[0])//2
+        self.config.genome_config.num_outputs = 9 if g_hw else 256
 
         self.population = neat.Population(self.config)
         self.population.add_reporter(neat.StdOutReporter(False))
@@ -51,10 +57,9 @@ class NeatSca:
             A tuple containing the final best genome and the config object.
         """
         # Global trace set can be either static or a list of folds
-        global x, y, pt, k, g_hw, num_folds, sgd_train
+        global x, y, pt, k, g_hw, num_folds, sgd_train, avg_pooling
         x, y, pt, k, g_hw = x_train, y_train, pt_train, k_train, hw
         num_folds = n_folds
-        sgd_train = self.use_sgd
         # set_global_data("cw", 8000, subkey_idx=1, n_folds=1, remote=False, hw=True, metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY)
 
         eval_func = self.pe.evaluate if self.parallelise else eval_pop_fitness
@@ -83,11 +88,11 @@ def evaluate_genome_fitness(genome, config):
     Arguments:
         genome: A (genome_id, genome) tuple.
     """
-    global x, y, pt, k, k_idx, g_hw, metric, sgd_train
+    global x, y, pt, k, k_idx, g_hw, metric, sgd_train, avg_pooling
 
     # nn = neat.nn.FeedForwardNetwork.create(genome, config)
     # preds = neat_nn_predictions(nn, x, g_hw)
-    nn = genome_to_keras_model(genome, config)
+    nn = genome_to_keras_model(genome, config, use_avg_pooling=avg_pooling)
 
     if nn is None:
         return -777  # Impossibly low fitness regardless of metric
@@ -135,7 +140,8 @@ def multifold_genome_fitness_eval(genome, config):
     return -float(np.mean(fitnesses))
 
 
-def genome_to_keras_model(genome, config, use_genome_params=False):
+def genome_to_keras_model(genome, config, use_genome_params=False,
+                          use_avg_pooling=True):
     """
     Converts a NEAT-Python genome instance to a keras model using the keras
     functional API.
@@ -150,7 +156,10 @@ def genome_to_keras_model(genome, config, use_genome_params=False):
 
     n_inputs = config.genome_config.num_inputs
     inputs = keras.Input(shape=(n_inputs, 1))
-    # x = keras.layers.Flatten()(inputs)
+
+    if use_avg_pooling:
+        # Assume `n_inputs` is already compatible, i.e. half its normal size
+        inputs = keras.layers.AveragePooling1D(pool_size=2, strides=2)(inputs)
 
     node_outputs = {}
     for layer in layers:
@@ -232,7 +241,7 @@ def genome_to_keras_model(genome, config, use_genome_params=False):
 def set_global_data(dataset_name, n_traces, subkey_idx, n_folds=1,
                     remote=False, hw=True,
                     metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
-                    balanced=False):
+                    balanced=False, use_sgd=True, use_avg_pooling=True):
     mapping = {
         "ascad": load_prepared_ascad_vars,
         "cw": load_chipwhisperer_data
@@ -243,9 +252,10 @@ def set_global_data(dataset_name, n_traces, subkey_idx, n_folds=1,
         subkey_idx=subkey_idx, remote=remote, hw=hw
     )
 
-    global x, y, pt, k, k_idx, g_hw, metric, num_folds
+    global x, y, pt, k, k_idx, g_hw, metric, num_folds, sgd_train, avg_pooling
     x, y, pt, k = data[0], data[1], data[2], data[-1]
     k_idx, g_hw, metric, num_folds = subkey_idx, hw, metric_type, n_folds
+    sgd_train, avg_pooling = use_sgd, use_avg_pooling
 
     n_cls = 9 if hw else 256
     x, y, pt = sample_traces(n_traces, x, y, pt, n_cls, balanced=balanced)
