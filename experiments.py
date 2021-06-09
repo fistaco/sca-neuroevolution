@@ -20,17 +20,16 @@ from helpers import (compute_fold_keyranks, compute_mem_req,
                      gen_experiment_name, gen_extended_exp_name,
                      gen_ga_grid_search_arg_lists, kfold_mean_key_ranks,
                      label_to_subkey, kfold_mean_inc_kr,
-                     gen_mini_grid_search_arg_lists, neat_nn_predictions)
+                     gen_mini_grid_search_arg_lists, neat_nn_predictions,
+                     gen_neat_exp_name)
 from metrics import MetricType, keyrank
 import models
-from models import (build_small_cnn_ascad,
-                    build_small_cnn_ascad_trainable_conv,
-                    build_small_mlp_ascad,
+from models import (build_small_cnn_ascad, train, build_small_mlp_ascad,
                     build_small_mlp_ascad_trainable_first_layer,
                     load_nn_from_experiment_results, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
                     small_mlp_cw, mini_mlp_cw, small_mlp_cw_func)
-from neat_sca import NeatSca
+from neat_sca import NeatSca, genome_to_keras_model
 from nn_genome import NeuralNetworkGenome
 from plotting import (plot_gens_vs_fitness, plot_n_traces_vs_key_rank,
                       plot_var_vs_key_rank, plot_2d, plot_3d)
@@ -38,30 +37,37 @@ from result_processing import ResultCategory, filter_df
 
 
 def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
-                    parallelise=True):
+                    parallelise=True, use_sgd=True, avg_pooling=False,
+                    dataset_name="cw"):
     subkey_idx = 1
     (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
         load_chipwhisperer_data(8000, subkey_idx=1, remote=remote, hw=hw)
     k_train = k_atk = k
 
+    exp_name = gen_neat_exp_name(
+        pop_size, max_gens, hw, avg_pooling, dataset_name)
+
     # Train with NEAT
     neat_evo = NeatSca(pop_size, max_gens, remote=remote,
-                       parallelise=parallelise)
+                       parallelise=parallelise, use_sgd=use_sgd)
     (best_indiv, config) = neat_evo.run(x_train, y_train, pt_train, k, hw)
 
-    nn = neat.nn.FeedForwardNetwork.create(best_indiv, config)
-    preds = neat_nn_predictions(nn, x_atk, hw=hw)
+    nn = genome_to_keras_model(best_indiv, config)
+    nn = train(nn, x_train, y_train)
+    nn.save("neat_most_recent_best_nn.h5")
+
+    (best_fitness_per_gen, _) = neat_evo.get_results()
+    plot_gens_vs_fitness(exp_name, best_fitness_per_gen)
 
     # Evaluate on test set
     kfold_ascad_atk_with_varying_size(
-        90,
+        18,
         nn,
         subkey_idx=subkey_idx,
-        experiment_name="neat_test",
+        experiment_name=exp_name,
         atk_data=(x_atk, y_atk, k, pt_atk),
-        parallelise=True,
-        hw=hw,
-        preds=preds
+        parallelise=parallelise,
+        hw=hw
     )
 
 
@@ -761,9 +767,12 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
             apply_fi=fi, hw=hw, balanced=balanced, gen_sgd_train=gen_sgd_train
         )
     else:
+        start = time()
+
         # nn = small_mlp_cw(build=True, hw=hw, n_dense=n_dense)
         # nn = mini_mlp_cw(build=True, hw=hw)
-        nn = small_mlp_cw_func(build=True, hw=hw, n_dense=n_dense)
+        # nn = small_mlp_cw_func(build=True, hw=hw, n_dense=n_dense)
+        nn = tf.keras.models.load_model("neat_genome_keras_nn_test.h5")
         y_train = keras.utils.to_categorical(y_train)
         n_epochs = 50
         batch_size = 50
@@ -771,11 +780,13 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
         loss_fn = tf.keras.losses.CategoricalCrossentropy()
         nn.compile(optimizer, loss_fn)
         history = nn.fit(x_train, y_train, batch_size, n_epochs)
+
+        print(f"Elapsed time (load + train): {int(time() - start)} seconds")
     if save:
         nn.save(f"./trained_models/cw_mlp_trained_{suffix}.h5")
 
     kfold_ascad_atk_with_varying_size(
-        18,
+        6,
         nn,
         subkey_idx=subkey_idx,
         experiment_name=exp_name,

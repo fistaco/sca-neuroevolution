@@ -7,7 +7,8 @@ from tensorflow.python.ops.control_flow_ops import group
 from tensorflow.python.ops.gen_array_ops import split
 import numpy as np
 
-from helpers import load_model_weights_from_ga_results, consecutive_int_groups
+from helpers import (load_model_weights_from_ga_results,
+                     consecutive_int_groups, is_categorical)
 
 
 def build_small_cnn_ascad():
@@ -275,6 +276,22 @@ def build_small_cnn_rand_init():
     )
     
     return cnn
+
+
+def train(nn, x, y):
+    """
+    Trains the given `nn` with SGD on the given train (`x`) and test (`y`)
+    sets.
+    """
+    y_cat = y
+    if not is_categorical(y):
+        y_cat = keras.utils.to_categorical(y)
+    optimizer = keras.optimizers.Adam(learning_rate=5e-3)
+    loss_fn = keras.losses.CategoricalCrossentropy()
+    nn.compile(optimizer, loss_fn)
+    history = nn.fit(x, y_cat, batch_size=50, epochs=50, verbose=0)
+
+    return nn
 
 
 def load_nn_from_experiment_results(experiment_name, load_model_function):

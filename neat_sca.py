@@ -9,20 +9,22 @@ from tensorflow import keras
 from data_processing import (load_chipwhisperer_data, load_prepared_ascad_vars,
                              sample_traces)
 from helpers import (get_pool_size, neat_nn_predictions, compute_fitness,
-                     consecutive_int_groups)
+                     consecutive_int_groups, is_categorical)
 from metrics import MetricType
 
 
 x, y, pt, k, k_idx, g_hw = None, None, None, None, 1, True
 metric = MetricType.CATEGORICAL_CROSS_ENTROPY
+sgd_train = True
 num_folds = 1
 
 
 class NeatSca:
     def __init__(self, pop_size, max_gens, config_filepath="./neat-config",
-                 remote=False, parallelise=True):
+                 remote=False, parallelise=True, use_sgd=True):
         self.pop_size = pop_size
         self.max_gens = max_gens
+        self.use_sgd = use_sgd
 
         self.config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
                       neat.DefaultSpeciesSet, neat.DefaultStagnation,
@@ -31,6 +33,8 @@ class NeatSca:
 
         self.population = neat.Population(self.config)
         self.population.add_reporter(neat.StdOutReporter(False))
+        self.stats = neat.StatisticsReporter()
+        self.population.add_reporter(self.stats)
 
         self.parallelise = parallelise
         if parallelise:
@@ -47,19 +51,28 @@ class NeatSca:
             A tuple containing the final best genome and the config object.
         """
         # Global trace set can be either static or a list of folds
-        global x, y, pt, k, g_hw, num_folds
+        global x, y, pt, k, g_hw, num_folds, sgd_train
         x, y, pt, k, g_hw = x_train, y_train, pt_train, k_train, hw
         num_folds = n_folds
-        set_global_data("cw", 2000, subkey_idx=1, n_folds=1, remote=False, hw=True, metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY)
+        sgd_train = self.use_sgd
+        # set_global_data("cw", 8000, subkey_idx=1, n_folds=1, remote=False, hw=True, metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY)
 
         eval_func = self.pe.evaluate if self.parallelise else eval_pop_fitness
         best_indiv = self.population.run(eval_func, self.max_gens)
 
+        del self.pe
+
         return (best_indiv, self.config)
 
     def get_results(self):
-        # TODO: Obtain best fitness per gen and top N indivs
-        pass
+        """
+        Returns a tuple containing the best fitness per generation and the top
+        ten individuals from the most recent NEAT run.
+        """
+        top_ten = self.stats.best_unique_genomes(10)
+        best_fitness_per_gen = [g.fitness for g in self.stats.most_fit_genomes]
+
+        return (best_fitness_per_gen, top_ten)
 
 
 def evaluate_genome_fitness(genome, config):
@@ -70,13 +83,26 @@ def evaluate_genome_fitness(genome, config):
     Arguments:
         genome: A (genome_id, genome) tuple.
     """
-    global x, y, pt, k, k_idx, g_hw, metric
+    global x, y, pt, k, k_idx, g_hw, metric, sgd_train
 
-    nn = neat.nn.FeedForwardNetwork.create(genome, config)
-    preds = neat_nn_predictions(nn, x, g_hw)
+    # nn = neat.nn.FeedForwardNetwork.create(genome, config)
+    # preds = neat_nn_predictions(nn, x, g_hw)
+    nn = genome_to_keras_model(genome, config)
+
+    if nn is None:
+        return -777  # Impossibly low fitness regardless of metric
+
+    if sgd_train:
+        y_cat = y
+        if not is_categorical(y):
+            y_cat = keras.utils.to_categorical(y)
+        optimizer = keras.optimizers.Adam(learning_rate=5e-3)
+        loss_fn = keras.losses.CategoricalCrossentropy()
+        nn.compile(optimizer, loss_fn)
+        history = nn.fit(x, y_cat, batch_size=50, epochs=50, verbose=0)
 
     fit = float(
-        compute_fitness(nn, x, y, pt, metric, k, len(x), k_idx, g_hw, preds)
+        compute_fitness(nn, x, y, pt, metric, k, len(x), k_idx, g_hw)
     )
     return -fit
 
@@ -118,6 +144,9 @@ def genome_to_keras_model(genome, config, use_genome_params=False):
         config.genome_config.input_keys, config.genome_config.output_keys,
         genome.connections
     )
+
+    if not layers:
+        return None
 
     n_inputs = config.genome_config.num_inputs
     inputs = keras.Input(shape=(n_inputs, 1))
@@ -191,6 +220,9 @@ def genome_to_keras_model(genome, config, use_genome_params=False):
     for i in range(config.genome_config.num_outputs):
         if i in node_outputs:
             outputs.append(node_outputs[i])
+        else:
+            # Use a dummy output of 0 to keep categorical label outputs intact
+            outputs.append(keras.backend.constant(0))
     final_output_layer = keras.layers.Concatenate()(outputs)
     final_output_layer = keras.layers.Softmax()(final_output_layer)
 

@@ -5,6 +5,7 @@ import pickle
 
 import numpy as np
 from tensorflow.keras.losses import CategoricalCrossentropy
+from tensorflow.python.ops.gen_array_ops import size
 CCE = CategoricalCrossentropy()
 
 from constants import INVERSE_SBOX, SBOX, HW
@@ -410,6 +411,15 @@ def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor):
            f"{sf_str}-tp{tp}-mt_{mt.id()}-{fi_str}-{bt_str}-cor{cor}"
 
 
+def gen_neat_exp_name(pop_size, gens, hw, pool, data_name):
+    """
+    Generates an experiment name for a NEAT run using the given arguments.
+    """
+    lm_str = "hw" if hw else "id"
+    pool_str = "pool" if pool else "no_pool"
+    return f"neat-ps{pop_size}-{lm_str}-{pool_str}-{data_name}-{gens}gens"
+
+
 def calc_max_fitness(metric_type):
     """
     Returns the maximum fitness based on the given metric type.
@@ -606,3 +616,11 @@ def consecutive_int_groups(a, stepsize=1):
 
     split_idxs = np.where(np.diff(a) != stepsize)[0] + 1
     return np.split(a, split_idxs)
+
+
+def is_categorical(labels):
+    """
+    Returns whether or not the given `labels` are formatted categorically by
+    checking whether the inner layer has either 9 of 256 elements.
+    """
+    return len(np.shape(labels)) > 1 and np.shape(labels)[-1] > 1
