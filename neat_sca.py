@@ -8,7 +8,7 @@ from tensorflow import keras
 from tensorflow.python.ops.gen_nn_ops import avg_pool
 
 from data_processing import (load_chipwhisperer_data, load_prepared_ascad_vars,
-                             sample_traces)
+                             sample_traces, load_data)
 from helpers import (get_pool_size, neat_nn_predictions, compute_fitness,
                      consecutive_int_groups, is_categorical)
 from metrics import MetricType
@@ -245,18 +245,10 @@ def set_global_data(dataset_name, n_traces, subkey_idx, n_folds=1,
                     remote=False, hw=True,
                     metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
                     balanced=False, use_sgd=True, use_avg_pooling=True):
-    mapping = {
-        "ascad": load_prepared_ascad_vars,
-        "cw": load_chipwhisperer_data
-    }
-
-    DATA_LOAD_FUNC = mapping[dataset_name]
-    data = DATA_LOAD_FUNC(
-        subkey_idx=subkey_idx, remote=remote, hw=hw
-    )
+    data = load_data(dataset_name, hw, remote)
 
     global x, y, pt, k, k_idx, g_hw, metric, num_folds, sgd_train, avg_pooling
-    x, y, pt, k = data[0], data[1], data[2], data[-1]
+    x, y, pt, k = data[0], data[1], data[2], data[3]
     k_idx, g_hw, metric, num_folds = subkey_idx, hw, metric_type, n_folds
     sgd_train, avg_pooling = use_sgd, use_avg_pooling
 

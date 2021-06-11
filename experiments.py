@@ -49,7 +49,7 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
 
     # Train with NEAT
     neat_evo = NeatSca(pop_size, max_gens, remote=remote,
-                       parallelise=parallelise, use_sgd=use_sgd)
+                       parallelise=parallelise)
     (best_indiv, config) = neat_evo.run(x_train, y_train, pt_train, k, hw)
 
     nn = genome_to_keras_model(best_indiv, config)

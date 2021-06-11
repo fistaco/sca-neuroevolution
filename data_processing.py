@@ -16,8 +16,13 @@ def load_data(dataset_name, hw=False, remote=False):
         "dpav4": load_dpav4
     }
 
-    # Load (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk)
-    return load_funcs[dataset_name](hw=hw, remote=remote)
+    # Load (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk).
+    # Some methods only return 1 key, in which case we reformat the tuple
+    x = load_funcs[dataset_name](hw=hw, remote=remote)
+    if len(x) == 7:
+        return (x[0], x[1], x[2], x[-1], x[3], x[4], x[5], x[6])
+
+    return x
 
 
 def load_ascad_data(data_filepath="./../ASCAD_data/ASCAD_databases/ASCAD.h5",
