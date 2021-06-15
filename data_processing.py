@@ -26,16 +26,22 @@ def load_data(dataset_name, hw=False, remote=False):
 
 
 def load_ascad_data(data_filepath="./../ASCAD_data/ASCAD_databases/ASCAD.h5",
-                    load_metadata=False, remote_loc=False):
+                    load_metadata=False, remote_loc=False, desync=0):
     """
     Loads the ASCAD data set with h5py and returns a tuple containing the
     training traces, training labels, attack traces, attack labels, and
     optionally the metadata.
     """
+    set_name = "ASCAD"
+    if desync > 0:
+        set_name = f"ASCAD_desync{desync}"
+
     # Use the absolute directory from the TUD HPC project dir if desired
     if remote_loc:
-        data_filepath = "/tudelft.net/staff-bulk/ewi/insy/CYS/spicek/" + \
-                        "fschijlen/ASCAD_data/ASCAD_databases/ASCAD.h5"
+        data_filepath = f"/tudelft.net/staff-bulk/ewi/insy/CYS/spicek/" + \
+                        f"fschijlen/ASCAD_data/ASCAD_databases/{set_name}.h5"
+    else:
+        data_filepath = f"./../ASCAD_data/ASCAD_databases/{set_name}.h5"
 
     input_file = h5py.File(data_filepath, "r")
 
@@ -91,7 +97,7 @@ def load_ascad_atk_variables(subkey_idx=2, for_cnns=True, scale=False):
 
 def load_prepared_ascad_vars(subkey_idx=2, scale=True, use_mlp=True,
                              remote=False, for_sgd=False, hw=False,
-                             n_train=45000):
+                             n_train=45000, desync=0):
     """
     Loads the ASCAD training and attack traces along with the metadata, applies
     reshaping for CNNs, scales the traces, and returns all relevant variables
@@ -100,7 +106,7 @@ def load_prepared_ascad_vars(subkey_idx=2, scale=True, use_mlp=True,
     Note that y_train is not converted for training with SGD.
     """
     (x_train, y_train, x_atk, y_atk, train_meta, atk_meta) = \
-        load_ascad_data(load_metadata=True, remote_loc=remote)
+        load_ascad_data(load_metadata=True, remote_loc=remote, desync=desync)
     original_input_shape = (700, 1)
     x_train, y_train = x_train[:n_train], y_train[:n_train]
 
