@@ -52,26 +52,33 @@ def plot_n_traces_vs_key_rank(experiment_name, *key_rankss, labels=None):
     plt.clf()
 
 
-def plot_var_vs_key_rank(var_values, key_ranks, result_category):
+def plot_var_vs_key_rank(var_values, key_ranks, result_category, box=False,
+                         eval_fitness=False):
     """
     Plots a given list of variable values against a given list of key ranks,
     while labelling the variable according to a given result category.
     """
     var_name = result_category.name.replace("_", " ").capitalize()
+    eval_metric_name = "fitness" if eval_fitness else "incremental key rank"
 
     uniq_vals = np.unique(var_values)
     n = len(uniq_vals)
-    mean_key_ranks = [np.mean(key_ranks[i:i+10]) for i in range(n)]
-    yerr = [np.std(key_ranks[i:i+10]) for i in range(n)]
+    inc_kr_groups = [key_ranks[i:i+5] for i in range(0, len(key_ranks), 5)]
+    mean_key_ranks = [np.mean(group) for group in inc_kr_groups]
+    yerr = [np.std(group) for group in inc_kr_groups]
 
-    plt.title(f"{var_name} ~ key rank")
+    plt.title(f"{var_name} ~ final {eval_metric_name}")
     plt.xlabel(var_name)
-    plt.ylabel("Key rank")
+    plt.ylabel(eval_metric_name.capitalize())
     plt.grid(True)
 
-    plt.errorbar(uniq_vals, mean_key_ranks, yerr)
+    if box:
+        plt.boxplot(inc_kr_groups, labels=uniq_vals)
+    else:
+        plt.errorbar(uniq_vals, mean_key_ranks, yerr)
 
-    plt.savefig(f"./fig/{result_category.name.lower()}-vs-keyrank.png")
+    suffix = "fit" if eval_fitness else "inckr"
+    plt.savefig(f"./fig/{result_category.name.lower()}-vs-{suffix}.png")
     plt.clf()
 
 

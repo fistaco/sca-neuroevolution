@@ -29,13 +29,25 @@ class NeatSca:
         self.pop_size = pop_size
         self.max_gens = max_gens
 
+        n_inputs = len(x[0]) if not avg_pooling else len(x[0])//2
+        n_outputs = 9 if g_hw else 256
+
+        # Modify config file according to the given parameters
+        # config = configparser.ConfigParser()
+        # config.read("neat-config")
+        # config["NEAT"]["pop_size"] = str(pop_size)
+        # config["DefaultGenome"]["num_inputs"] = str(n_inputs)
+        # config["DefaultGenome"]["num_outputs"] = str(n_outputs)
+        # with open(config_filepath, "w") as f:
+        #     config.write(f)
+
+        # TODO: Modify config file according to parameters before loading
         self.config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
                       neat.DefaultSpeciesSet, neat.DefaultStagnation,
                       config_filepath)
         self.config.pop_size = pop_size
-        self.config.genome_config.num_inputs = len(x[0]) if not avg_pooling \
-            else len(x[0])//2
-        self.config.genome_config.num_outputs = 9 if g_hw else 256
+        self.config.genome_config.num_inputs = n_inputs
+        self.config.genome_config.num_outputs = n_outputs
 
         self.population = neat.Population(self.config)
         self.population.add_reporter(neat.StdOutReporter(False))

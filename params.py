@@ -3,7 +3,7 @@ from metrics import MetricType
 
 # Genetic algorithm parameters
 MUTATION_POWER = 0.03
-MUTATION_RATE = 0.04
+MUTATION_RATE = 0.1
 CROSSOVER_RATE = 0.5
 MAX_GENERATIONS = 50
 POPULATION_SIZE = 50

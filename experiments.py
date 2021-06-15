@@ -12,7 +12,7 @@ from constants import METRIC_TYPE_MAP, SELECT_FUNCTION_MAP
 from data_processing import (load_ascad_atk_variables, load_ascad_data,
                              load_prepared_ascad_vars, sample_data,
                              scale_inputs, shuffle_data, balanced_sample,
-                             load_chipwhisperer_data)
+                             load_chipwhisperer_data, load_data)
 from genetic_algorithm import (GeneticAlgorithm, evaluate_fitness,
                                train_nn_with_ga)
 from helpers import (compute_fold_keyranks, compute_mem_req,
@@ -39,33 +39,39 @@ from result_processing import ResultCategory, filter_df
 def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
                     parallelise=True, use_sgd=True, avg_pooling=True,
                     dataset_name="cw"):
-    subkey_idx = 1
-    (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
-        load_chipwhisperer_data(8000, subkey_idx=1, remote=remote, hw=hw)
-    k_train = k_atk = k
+    # subkey_idx = 1
+    # (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
+    #     load_chipwhisperer_data(8000, subkey_idx=1, remote=remote, hw=hw)
+    # k_train = k_atk = k
+    subkey_idx = 2
+    (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
+        load_data(dataset_name, hw=hw, remote=remote)
 
     exp_name = gen_neat_exp_name(
         pop_size, max_gens, hw, avg_pooling, dataset_name)
 
     # Train with NEAT
-    neat_evo = NeatSca(pop_size, max_gens, remote=remote,
+    neatsca = NeatSca(pop_size, max_gens, remote=remote,
                        parallelise=parallelise)
-    (best_indiv, config) = neat_evo.run(x_train, y_train, pt_train, k, hw)
+    (best_indiv, config) = neatsca.run(x_train, y_train, pt_train, k_train, hw)
 
     nn = genome_to_keras_model(best_indiv, config)
     nn = train(nn, x_train, y_train)
     nn.save("neat_most_recent_best_nn.h5")
 
-    (best_fitness_per_gen, _) = neat_evo.get_results()
+    (best_fitness_per_gen, top_ten) = neatsca.get_results()
     plot_gens_vs_fitness(exp_name, best_fitness_per_gen)
+
+    with open(f"neat_results/{exp_name}_results.pickle", "wb") as f:
+        pickle.dump((best_fitness_per_gen, top_ten), f)
 
     # Evaluate on test set
     kfold_ascad_atk_with_varying_size(
-        18,
+        100,
         nn,
         subkey_idx=subkey_idx,
         experiment_name=exp_name,
-        atk_data=(x_atk, y_atk, k, pt_atk),
+        atk_data=(x_atk, y_atk, k_atk, pt_atk),
         parallelise=parallelise,
         hw=hw
     )
@@ -342,22 +348,33 @@ def ensemble_atk_with_best_grid_search_networks(top_n=5):
     )
 
 
-def ga_grid_search_parameter_influence_eval():
+def ga_grid_search_parameter_influence_eval(eval_fitness=False):
     # Load df and params for best average performance
-    with open("res/ga_weight_evo_grid_search_results.pickle", "rb") as f:
+    with open("res/static_gs_weight_evo_results_df.pickle", "rb") as f:
         df = pickle.load(f)
-    with open("res/ga_weight_evo_grid_best_experiment_data.pickle", "rb") as f:
-        (ps, mp, mr, mpdr, fdr, ass, sm, _, _, _, key_rank) = pickle.load(f)
-    params = (ps, mp, mr, mpdr, fdr, ass, sm)
+    with open("res/static_gs_weight_evo_best_exp_data.pickle", "rb") as f:
+        (mp, mr, mpdr, sf, tp, cor, exp_idx, inc_kr) = pickle.load(f)
+    params = (mp, mr, mpdr, tp, cor)
+
+    boxplot_cats = {
+        ResultCategory.MUTATION_POWER_DECAY_RATE,
+        ResultCategory.TRUNCATION_PROPORTION, ResultCategory.CROSSOVER_RATE
+    }
+    eval_cat = ResultCategory.FITNESS if eval_fitness \
+        else ResultCategory.INCREMENTAL_KEYRANK
 
     # For each variable, plot its influence on the final key rank
     result_categories = list(ResultCategory)
-    for result_cat in result_categories[:7]:
+    for result_cat in result_categories[:len(params)]:
+        use_boxplot = result_cat in boxplot_cats
+
         sub_df = filter_df(df, params, exempt_idx=result_cat.value)
         plot_var_vs_key_rank(
             sub_df[:, result_cat.value],
-            sub_df[:, ResultCategory.KEY_RANK.value],
-            result_cat
+            sub_df[:, eval_cat.value],
+            result_cat,
+            box=use_boxplot,
+            eval_fitness=eval_fitness
         )
 
 
