@@ -34,14 +34,15 @@ from experiments import (attack_ascad_with_cnn, compute_memory_requirements,
 from metrics import MetricType
 from models import set_nn_load_func
 from neat_sca import set_global_data
+from params import *
 from result_processing import combine_grid_search_results
 
 set_nn_load_func("mini_mlp_cw")
 # set_nn_load_func("mlp_cw", (False, False, 1))
 set_global_data(
-    "cw", 8000, subkey_idx=1, n_folds=1, remote=False, hw=True,
-    metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY, balanced=False,
-    use_sgd=True, use_avg_pooling=True
+    "ascad", 3584, subkey_idx=1, n_folds=1, remote=False, hw=False,
+    metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY, balanced=True,
+    use_sgd=False, use_avg_pooling=True
 )
 
 
@@ -56,13 +57,14 @@ def dual_parallel_weight_evo_experiment(args, remote=True):
 
 
 if __name__ == "__main__":
-    # single_weight_evo_grid_search_experiment(
-    #     int(sys.argv[1]), int(sys.argv[2]), remote=False, parallelise=True, hw=True
-    # )
+    custom_params = (5, MUTATION_POWER, MUTATION_RATE, MUTATION_POWER_DECAY, FITNESS_INHERITANCE_DECAY, 316,
+                     SELECTION_FUNCTION, METRIC_TYPE, 10, APPLY_FITNESS_INHERITANCE, False, TRUNCATION_PROPORTION, CROSSOVER_RATE)
+    single_weight_evo_grid_search_experiment(
+        int(sys.argv[1]), int(sys.argv[2]), remote=False, parallelise=True, hw=True, params=custom_params, static_seed=True
+    )
 
     # dual_parallel_weight_evo_experiment(sys.argv, remote=False)
     # weight_evo_experiment_from_params(sys.argv, remote=True)
-    # combine_grid_search_results()
 
     # attack_chipwhisperer_mlp(remote=False, train_with_ga=True, ass=315, folds=1, shuffle=True, balanced=True,
     #                          psize=1000, gens=100, hw=True, n_dense=1, gen_sgd_train=False, metric=MetricType.CATEGORICAL_CROSS_ENTROPY,
@@ -71,5 +73,5 @@ if __name__ == "__main__":
     # train_first_layer_ascad_mlp()
     # single_ensemble_experiment()
 
-    neat_experiment(pop_size=6, max_gens=3, remote=False, hw=True, parallelise=True, avg_pooling=False, dataset_name="cw")
+    # neat_experiment(pop_size=6, max_gens=20, remote=False, hw=False, parallelise=False, avg_pooling=True, dataset_name="ascad")
     # attack_chipwhisperer_mlp(train_with_ga=False, remote=False, hw=True, n_dense=1)

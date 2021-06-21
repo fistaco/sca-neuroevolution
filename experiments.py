@@ -103,7 +103,8 @@ def weight_evo_experiment_from_params(cline_args, remote=True):
 
 
 def single_weight_evo_grid_search_experiment(
-    exp_idx=0, run_idx=0, params=None, remote=True, parallelise=True, hw=True):
+    exp_idx=0, run_idx=0, params=None, remote=True, parallelise=True, hw=True,
+    static_seed=False):
     """
     Executes an averaged GA experiment over 10 runs, where the arguments of the
     GA are determined by the given index for the generated list of GA
@@ -130,6 +131,8 @@ def single_weight_evo_grid_search_experiment(
     exp_name = gen_extended_exp_name(
         ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor
     )
+    if static_seed:
+        exp_name += "_same-folds"
 
     run_ga_for_grid_search(
         max_gens=150,
@@ -159,7 +162,8 @@ def single_weight_evo_grid_search_experiment(
         experiment_name=exp_name,
         save_results=True,
         remote=remote,
-        hw=hw
+        hw=hw,
+        static_seed=static_seed
     )
 
 def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
@@ -167,7 +171,8 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
            atk_set_size, nn, x_valid, y_valid, ptexts_valid, x_test, y_test,
            ptexts_test, k_valid, k_test, parallelise, apply_fi, select_fun,
            metric_type, balanced_traces, n_folds, run_idx, subkey_idx=1,
-           experiment_name="test", save_results=True, remote=True, hw=True):
+           experiment_name="test", save_results=True, remote=True, hw=True,
+           static_seed=False):
     """
     Runs a one GA experiment with the given parameters and stores the results
     in a directory specific to this experiment.
@@ -195,9 +200,11 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
         remote
     )
 
+    shuffle = n_folds > 1
     best_indiv = \
         ga.run(nn, x_valid, y_valid, ptexts_valid, k_valid,
-               shuffle_traces=False, balanced=balanced_traces, hw=hw)
+               shuffle_traces=shuffle, balanced=balanced_traces, hw=hw,
+               static_seed=static_seed)
 
     # Create a new model from the best individual's weights and evaluate it
     nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
