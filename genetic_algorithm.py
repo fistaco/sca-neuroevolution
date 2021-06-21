@@ -78,7 +78,8 @@ class GeneticAlgorithm:
             self.pool.close()
 
     def run(self, nn, x_atk, y_atk, pt_atk, k_atk, subkey_i=2,
-            shuffle_traces=True, balanced=True, debug=False, hw=False):
+            shuffle_traces=True, balanced=True, debug=False, hw=False,
+            static_seed=False):
         """
         Runs the genetic algorithm with the parameters it was constructed with
         and returns the best found individual.
@@ -97,7 +98,7 @@ class GeneticAlgorithm:
         best_individual = None
 
         while gen < self.max_gens and best_fitness > self.min_fitness:
-            seed = gen if self.n_atk_folds > 1 else 77
+            seed = gen if self.n_atk_folds > 1 and not static_seed else 77
 
             # if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
             #     y_atk = tf.keras.utils.to_categorical(y_atk,(9 if hw else 256))
@@ -429,23 +430,37 @@ def multifold_fitness_eval(weights, x_atk, y_atk, pt_atk, true_subkey,
     nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
     nn.set_weights(weights)
 
-    fitnesses = np.zeros(n_folds, dtype=np.float64)
+    # fitnesses = np.zeros(n_folds, dtype=np.float64)
     n_classes = 9 if hw else 256
-    for fold in range(n_folds):
-        x, y, pt = sample_traces(
-            atk_set_size, x_atk, y_atk, pt_atk, n_classes, shuffle=shuffle,
-            balanced=balanced
-        )
 
-        if metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
-            y = tf.keras.utils.to_categorical(y, (9 if hw else 256))
+    x, y, pt = sample_traces(
+        atk_set_size, x_atk, y_atk, pt_atk, n_classes, shuffle=shuffle,
+        balanced=balanced
+    )
 
-        fitnesses[fold] = compute_fitness(
-            nn, x, y, pt, metric_type, true_subkey, atk_set_size, subkey_idx,
-            hw
-        )
+    if metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
+        y = tf.keras.utils.to_categorical(y, (9 if hw else 256))
 
-    return np.mean(fitnesses)
+    return compute_fitness(
+        nn, x, y, pt, metric_type, true_subkey, atk_set_size, subkey_idx, hw,
+        preds=None, n_folds=n_folds
+    )
+
+    # for fold in range(n_folds):
+    #     x, y, pt = sample_traces(
+    #         atk_set_size, x_atk, y_atk, pt_atk, n_classes, shuffle=shuffle,
+    #         balanced=balanced
+    #     )
+
+    #     if metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
+    #         y = tf.keras.utils.to_categorical(y, (9 if hw else 256))
+
+    #     fitnesses[fold] = compute_fitness(
+    #         nn, x, y, pt, metric_type, true_subkey, atk_set_size, subkey_idx,
+    #         hw
+    #     )
+
+    # return np.mean(fitnesses)
 
 
 def adjust_fitness(fitness, avg_parent_fitness, fi_decay, scaling=0.5):
