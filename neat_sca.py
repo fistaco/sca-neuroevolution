@@ -1,5 +1,6 @@
 import configparser
 import multiprocessing as mp
+import pickle
 
 import neat
 import numpy as np
@@ -12,6 +13,7 @@ from data_processing import (load_chipwhisperer_data, load_prepared_ascad_vars,
 from helpers import (get_pool_size, neat_nn_predictions, compute_fitness,
                      consecutive_int_groups, is_categorical)
 from metrics import MetricType
+from models import constant_zero_tensor
 
 
 x, y, pt, k, k_idx, g_hw = None, None, None, None, 1, True
@@ -69,9 +71,9 @@ class NeatSca:
             A tuple containing the final best genome and the config object.
         """
         # Global trace set can be either static or a list of folds
-        global x, y, pt, k, g_hw, num_folds, sgd_train, avg_pooling
-        x, y, pt, k, g_hw = x_train, y_train, pt_train, k_train, hw
-        num_folds = n_folds
+        # global x, y, pt, k, g_hw, num_folds, sgd_train, avg_pooling
+        # x, y, pt, k, g_hw = x_train, y_train, pt_train, k_train, hw
+        # num_folds = n_folds
         # set_global_data("cw", 8000, subkey_idx=1, n_folds=1, remote=False, hw=True, metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY)
 
         eval_func = self.pe.evaluate if self.parallelise else eval_pop_fitness
@@ -126,6 +128,8 @@ def evaluate_genome_fitness(genome, config):
 
 def eval_pop_fitness(genomes, config):
     for (i, genome) in enumerate(genomes):
+        with open("most_recent_genome.pickle", "wb") as f:
+            pickle.dump(genome, f)
         genomes[i][1].fitness = evaluate_genome_fitness(genome[1], config)
 
 
@@ -138,7 +142,7 @@ def multifold_genome_fitness_eval(genome, config):
     Arguments:
         genome: A (genome_id, genome) tuple.
     """
-    global x, y, pt, k, k_idx, g_hw, metric, num_folds
+    global x, y, pt, k, k_idx, g_hw, metric, num_folds, sgd_train, avg_pooling
     assert x is not None
 
     nn = neat.nn.FeedForwardNetwork.create(genome, config)
@@ -246,7 +250,7 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
             outputs.append(node_outputs[i])
         else:
             # Use a dummy output of 0 to keep categorical label outputs intact
-            outputs.append(keras.backend.constant(0))
+            outputs.append(keras.layers.Lambda(constant_zero_tensor)(inputs))
     final_output_layer = keras.layers.Concatenate()(outputs)
     final_output_layer = keras.layers.Softmax()(final_output_layer)
 
