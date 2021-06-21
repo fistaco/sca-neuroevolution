@@ -103,7 +103,7 @@ def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k, key_idx=2,
             y_pred_probs, ptexts = shuffle_data(y_pred_probs, ptexts)
             fold_key_ranks[:, fold] = compute_fold_keyranks(
                 fold, y_pred_probs, ptexts, key_idx, set_size, true_subkey,
-                verbose=True, hw=hw
+                verbose=verbose, hw=hw
             )
 
     if parallelise:
@@ -114,21 +114,22 @@ def kfold_mean_key_ranks(y_pred_probs, ptexts, true_subkey, k, key_idx=2,
     mean_key_ranks = np.zeros(set_size, dtype=np.uint8)
     for i in range(set_size):
         mean_key_ranks[i] = round(np.mean(fold_key_ranks[i]))
-    filepath = f"results/{experiment_name}_test_set_mean_key_ranks.pickle"
-    with open(filepath, "wb") as f:
-        pickle.dump(mean_key_ranks, f)
+    if experiment_name:
+        filepath = f"results/{experiment_name}_test_set_mean_key_ranks.pickle"
+        with open(filepath, "wb") as f:
+            pickle.dump(mean_key_ranks, f)
 
     # Print key ranks for various attack set sizes
     atk_set_sizes = range(set_size + 1, 100)
-    n_atk_set_sizes = len(atk_set_sizes)
     reached_keyrank_zero = False
-    for (n_traces, rank) in enumerate(mean_key_ranks):
-        # Print milestones
-        if n_traces % 250 == 0:
-            print(f"Mean key rank with {n_traces + 1} attack traces: {rank}")
-        if rank == 0 and not reached_keyrank_zero:
-            print(f"Key rank 0 obtained after {n_traces + 1} traces")
-            reached_keyrank_zero = True
+    if verbose:
+        for (n_traces, rank) in enumerate(mean_key_ranks):
+            # Print milestones
+            if n_traces % 250 == 0:
+                print(f"Mean key rank at {n_traces + 1} attack traces: {rank}")
+            if rank == 0 and not reached_keyrank_zero:
+                print(f"Key rank 0 obtained after {n_traces + 1} traces")
+                reached_keyrank_zero = True
     
     return mean_key_ranks
 
@@ -178,7 +179,8 @@ def compute_fold_keyranks(fold, y_pred_probs, atk_ptexts, subkey_idx,
 
 
 def compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey,
-                    atk_set_size, subkey_idx=2, hw=False, preds=None):
+                    atk_set_size, subkey_idx=2, hw=False, preds=None,
+                    n_folds=1):
     """
     Executes a side-channel attack on the given traces using the given neural
     network and uses the obtained prediction probabilities to compute the key
@@ -189,48 +191,58 @@ def compute_fitness(nn, x_atk, y_atk, ptexts, metric_type, true_subkey,
     y_pred_probs = preds if preds is not None else nn.predict(x_atk)
     return evaluate_preds(
         y_pred_probs, metric_type, ptexts, true_subkey, y_atk, atk_set_size,
-        subkey_idx, hw
+        subkey_idx, hw, n_folds
     )
 
 
-def evaluate_preds(preds, metric_type, ptexts, true_subkey, true_labels,
-                   set_size, subkey_idx=2, hw=False):
+def evaluate_preds(preds, metric_type, ptexts, k_true, true_labels, set_size,
+                   k_idx=2, hw=False, n_folds=1):
     """
     Evaluates the given predictions using the method indicated by the given
     metric type and returns the result.
     """
     if metric_type == MetricType.KEYRANK:
-        subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx, hw)
-        return keyrank(subkey_probs, true_subkey)
+        # subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx, hw)
+        # return keyrank(subkey_probs, true_subkey)
+        return kfold_mean_key_ranks(
+                preds, ptexts, k_true, n_folds, k_idx, verbose=False, hw=hw
+            )[-1]
     elif metric_type == MetricType.ACCURACY:
         return (1 - accuracy(preds, true_labels))*100
     elif metric_type == MetricType.KEYRANK_AND_ACCURACY:
-        subkey_probs = subkey_pred_logprobs(preds, ptexts, subkey_idx, hw)
-        res = keyrank(subkey_probs, true_subkey) - accuracy(preds, true_labels)
-        return res
+        # subkey_probs = subkey_pred_logprobs(preds, ptexts, k_idx, hw)
+        # res = keyrank(subkey_probs, k_true) - accuracy(preds, true_labels)
+        kr = kfold_mean_key_ranks(
+            preds, ptexts, k_true, n_folds, k_idx, verbose=False, hw=hw)[-1]
+        return kr - accuracy(preds, true_labels)
     elif metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
         return CCE(true_labels, preds).numpy()  # true_labels should be 1-hot
     elif metric_type == MetricType.INCREMENTAL_KEYRANK:
         # f = (n_traces_for_kr_zero + kr_10_pct + 0.5*kr_50_pct + 0.5*acc')
+        if n_folds > 1:
+            return multifold_inc_kr(
+                preds, true_labels, ptexts, k_true, n_folds, k_idx,
+                set_size, hw=hw
+            )
+
         key_ranks = compute_fold_keyranks(
-            7, preds, ptexts, subkey_idx, set_size, true_subkey, False, hw)
+            7, preds, ptexts, k_idx, set_size, k_true, False, hw)
 
         # Adjust for inconsistencies
         element_wise_remaining_max_replace(key_ranks)
 
         return incremental_keyrank(key_ranks, set_size, preds, true_labels)
     elif metric_type == MetricType.KEYRANK_PROGRESS:
-        key_ranks = compute_fold_keyranks(
-            7, preds, ptexts, subkey_idx, set_size, true_subkey, False, hw)
+        if n_folds == 1:
+            key_ranks = compute_fold_keyranks(
+                7, preds, ptexts, k_idx, set_size, k_true, False, hw)
+        else:
+            key_ranks = kfold_mean_key_ranks(
+                preds, ptexts, k_true, n_folds, key_idx=k_idx,
+                verbose=False, hw=hw
+            )
 
-        krs_20pct_steps = np.empty(9, dtype=np.uint8)
-        krs_20pct_steps[0] = 128
-        krs_20pct_steps[1:] = np.clip(key_ranks[::(set_size//8) - 1][1:], None, 128)
-
-        # Adjust for inconsistencies
-        element_wise_remaining_max_replace(krs_20pct_steps)
-
-        return np.mean(np.diff(krs_20pct_steps.astype(np.int16)))
+        return keyrank_progress(key_ranks, set_size)
     else:
         print("Encountered invalid metric type. Quitting.")
         exit(1)
@@ -301,6 +313,28 @@ def incremental_keyrank(key_ranks, set_size, preds, true_labels):
     acc = accuracy(preds, true_labels)
 
     return kr0_n_traces + kr_10pct + 0.5*kr_50pct + 0.5*(1 - acc)
+
+
+def multifold_inc_kr(preds, true_labels, pt, k_true, n_folds, k_idx, set_size,
+                     hw=False):
+    """
+    Computes the incremental key rank metric over `n_folds` folds of the given
+    predictions.
+    """
+    mean_ranks = kfold_mean_key_ranks(
+        preds, pt, k_true, n_folds, key_idx=k_idx, verbose=False, hw=hw)
+    return incremental_keyrank(mean_ranks, set_size, preds, true_labels)
+
+
+def keyrank_progress(key_ranks, set_size):
+    krs_20pct_steps = np.empty(9, dtype=np.uint8)
+    krs_20pct_steps[0] = 128
+    krs_20pct_steps[1:] = np.clip(key_ranks[::(set_size//8) - 1][1:], None, 128)
+
+    # Adjust for inconsistencies
+    element_wise_remaining_max_replace(krs_20pct_steps)
+
+    return np.mean(np.diff(krs_20pct_steps.astype(np.int16)))
 
 
 def ga_stagnation(fits, curr_gen, n_gens, thresh):
