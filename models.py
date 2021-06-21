@@ -322,6 +322,13 @@ def set_nn_load_func(nn_str, args=()):
     NN_LOAD_ARGS = args
 
 
+@tf.function
+def constant_zero_tensor(layer):
+    batch_size = tf.shape(layer)[0]
+    zero_tensor = keras.backend.constant(0, shape=(1,))
+    return tf.broadcast_to(zero_tensor, shape=(batch_size, 1))
+
+
 class MaskedDense(keras.layers.Dense):
     """
     A standard NN layer with the option to mask incoming connections.

@@ -1,3 +1,4 @@
+from params import SELECTION_FUNCTION
 import pickle
 from enum import Enum
 import sys
@@ -18,17 +19,19 @@ def combine_grid_search_results():
     best_inc_kr = 3.0
     best_run_results = None
     best_avg_inc_kr = 3.0
-    best_experiment_data = None
+    best_exp_data = None
     n_repeats = 5
 
     df = np.zeros((n_exps*n_repeats, len(ResultCategory)), dtype=object)
     run_nr = 0
     for (exp_idx, args) in enumerate(argss):
         (ps, mp, mr, mpdr, fdr, ass, sf, mt, n_folds, fi, bt, tp, cor) = args
+        exp_name_args = (ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor)
+
         print(f"Processing results from experiment {exp_idx}/{n_exps - 1}")
 
-        name = gen_extended_exp_name(*args)
-        dir_path = f"grid-search-results/{name}"
+        name = gen_extended_exp_name(*exp_name_args)
+        dir_path = f"weight-evo-grid-search-results/{name}"
 
         avg_inc_kr = 0
         for i in range(n_repeats):
@@ -50,14 +53,14 @@ def combine_grid_search_results():
                 print(f"=== Achieved with: {name} ===")
 
             # Put results in dataframe
-            df[run_nr] = [mp, mr, mpdr, sf, tp, cor, fit, inc_kr]
+            df[run_nr] = [mp, mr, mpdr, tp, cor, fit, inc_kr]
 
             run_nr += 1
 
         # Update best results so far
         if avg_inc_kr < best_avg_inc_kr:
             best_avg_inc_kr = avg_inc_kr
-            best_experiment_data = (mp, mr, mpdr, sf, tp, cor, exp_idx, inc_kr)
+            best_exp_data = (mp, mr, mpdr, sf, tp, cor, exp_idx, avg_inc_kr)
 
             print(f"=== New best avg key rank: {avg_inc_kr} ===")
             print(f"=== Achieved with: {name} ===")
@@ -70,9 +73,11 @@ def combine_grid_search_results():
     with open("res/static_gs_weight_evo_best_run_results.pickle", "wb") as f:
         pickle.dump(best_run_results, f)
     with open("res/static_gs_weight_evo_best_exp_data.pickle", "wb") as f:
-        pickle.dump(best_experiment_data, f)
+        pickle.dump(best_exp_data, f)
 
     print("Finished processing and saving grid search results.")
+
+    return df
 
 
 def filter_df(df, variables, exempt_idx=-1):
@@ -117,14 +122,11 @@ def fitness_keyrank_corr(df, fit_col_idx=0, kr_col_idx=1):
 
 
 class ResultCategory(Enum):
-    POPULATION_SIZE = 0
-    MUTATION_POWER = 1
-    MUTATION_RATE = 2
-    MUTATION_POWER_DECAY_RATE = 3
-    FITNESS_INHERITANCE_DECAY_RATE = 4
-    ATTACK_SET_SIZE = 5
-    SELECTION_METHOD = 6
-    METRIC_TYPE = 7
-    NETWORK_TYPE = 8
-    KEY_RANK = 9
-    FITNESS = 10
+    MUTATION_POWER = 0
+    MUTATION_RATE = 1
+    MUTATION_POWER_DECAY_RATE = 2
+    TRUNCATION_PROPORTION = 3
+    CROSSOVER_RATE = 4
+    FITNESS = 5
+    INCREMENTAL_KEYRANK = 6
+    SELECTION_FUNCTION = 7
