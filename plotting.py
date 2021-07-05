@@ -3,7 +3,7 @@ from matplotlib import cm
 import numpy as np
 
 
-def plot_gens_vs_fitness(experiment_name, fitnesses_per_gen):
+def plot_gens_vs_fitness(experiment_name, *fit_progress_lists, labels=None):
     """
     Constructs and saves a plot with the generations on the x-axis and fitness
     values on the y-axis.
@@ -14,11 +14,25 @@ def plot_gens_vs_fitness(experiment_name, fitnesses_per_gen):
 
         experiment_name: The name of the results' corresponding experiment.
     """
-    plt.title(f"Generations ~ fitness ({experiment_name})")
+    plt.title(f"Generations ~ fitness ({experiment_name.replace('_', ' ')})")
     plt.xlabel("Generations")
     plt.ylabel("Fitness")
-    plt.plot(np.arange(len(fitnesses_per_gen)), fitnesses_per_gen)
-    # plt.ylim(-1, 180)
+
+    # max_gens = max([len(a) for a in fit_progress_lists])
+    for fitnesses_per_gen in fit_progress_lists:
+        nonzero_fits = np.array(fitnesses_per_gen)
+        nonzero_fits = nonzero_fits[nonzero_fits != 0]
+        fitnesses_per_gen[len(nonzero_fits):] = nonzero_fits[-1]
+
+        # fit_progress = np.zeros(max_gens)
+        # fit_progress[:len_nz] = fitnesses_per_gen[:len_nz]
+        # fit_progress[len_nz:] = nonzero_fits[-1]
+
+        plt.plot(np.arange(len(fitnesses_per_gen)), fitnesses_per_gen)
+
+    if labels:
+        plt.legend(labels)
+
     plt.grid(True)
     plt.savefig(f"./fig/{experiment_name}_gens_vs_fitness.png")
     plt.clf()
@@ -52,16 +66,18 @@ def plot_n_traces_vs_key_rank(experiment_name, *key_rankss, labels=None):
     plt.clf()
 
 
-def plot_var_vs_key_rank(var_values, key_ranks, result_category, box=False,
-                         eval_fitness=False):
+def plot_var_vs_key_rank(var_values, key_ranks, result_category=None,
+                         box=False, eval_fitness=False, var_name=None):
     """
     Plots a given list of variable values against a given list of key ranks,
     while labelling the variable according to a given result category.
     """
-    var_name = result_category.name.replace("_", " ").capitalize()
+    var_name = result_category.name.replace("_", " ").capitalize() \
+        if result_category is not None else var_name
     eval_metric_name = "fitness" if eval_fitness else "incremental key rank"
 
-    uniq_vals = np.unique(var_values)
+    _, uniq_idxs = np.unique(var_values, return_index=True)
+    uniq_vals = var_values[np.sort(uniq_idxs)]
     n = len(uniq_vals)
     inc_kr_groups = [key_ranks[i:i+5] for i in range(0, len(key_ranks), 5)]
     mean_key_ranks = [np.mean(group) for group in inc_kr_groups]
@@ -78,7 +94,7 @@ def plot_var_vs_key_rank(var_values, key_ranks, result_category, box=False,
         plt.errorbar(uniq_vals, mean_key_ranks, yerr)
 
     suffix = "fit" if eval_fitness else "inckr"
-    plt.savefig(f"./fig/{result_category.name.lower()}-vs-{suffix}.png")
+    plt.savefig(f"./fig/{var_name.replace(' ', '_').lower()}-vs-{suffix}.png")
     plt.clf()
 
 
