@@ -104,7 +104,7 @@ def weight_evo_experiment_from_params(cline_args, remote=True):
 
 def single_weight_evo_grid_search_experiment(
     exp_idx=0, run_idx=0, params=None, remote=True, parallelise=True, hw=True,
-    static_seed=False):
+    gens=1000, static_seed=False, randomise_init_weights=True, sgd=False):
     """
     Executes an averaged GA experiment over 10 runs, where the arguments of the
     GA are determined by the given index for the generated list of GA
@@ -129,13 +129,12 @@ def single_weight_evo_grid_search_experiment(
         params or gen_mini_grid_search_arg_lists()[exp_idx]
 
     exp_name = gen_extended_exp_name(
-        ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor
+        ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor,
+        randomise_init_weights, sgd
     )
-    if static_seed:
-        exp_name += "_same-folds"
 
     run_ga_for_grid_search(
-        max_gens=150,
+        max_gens=gens,
         pop_size=ps,
         mut_power=mp,
         mut_rate=mr,
@@ -163,7 +162,9 @@ def single_weight_evo_grid_search_experiment(
         save_results=True,
         remote=remote,
         hw=hw,
-        static_seed=static_seed
+        static_seed=static_seed,
+        randomise_init_weights=randomise_init_weights,
+        sgd=sgd
     )
 
 def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
@@ -172,7 +173,7 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
            ptexts_test, k_valid, k_test, parallelise, apply_fi, select_fun,
            metric_type, balanced_traces, n_folds, run_idx, subkey_idx=1,
            experiment_name="test", save_results=True, remote=True, hw=True,
-           static_seed=False):
+           static_seed=False, randomise_init_weights=True, sgd=False):
     """
     Runs a one GA experiment with the given parameters and stores the results
     in a directory specific to this experiment.
@@ -197,14 +198,16 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
         select_fun,
         metric_type,
         n_folds,
-        remote
+        remote,
+        gen_sgd_train=sgd
     )
 
     shuffle = n_folds > 1
-    best_indiv = \
-        ga.run(nn, x_valid, y_valid, ptexts_valid, k_valid,
-               shuffle_traces=shuffle, balanced=balanced_traces, hw=hw,
-               static_seed=static_seed)
+    best_indiv = ga.run(
+        nn, x_valid, y_valid, ptexts_valid, k_valid, shuffle_traces=shuffle,
+        balanced=balanced_traces, hw=hw, static_seed=static_seed,
+        randomise_init_weights=randomise_init_weights
+    )
 
     # Create a new model from the best individual's weights and evaluate it
     nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
@@ -223,6 +226,45 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
         results = (best_indiv, best_fitness_per_gen, top_ten, fit, inc_kr)
         with open(f"{dir_path}/run{run_idx}_results.pickle", "wb") as f:
             pickle.dump(results, f)
+
+
+def weight_evo_results_from_exp_names(exp_names, exp_labels, file_tag,
+                                      separate_fit_prog_plots=False):
+    """
+    Generates a fitness progress plot and key rank progress plot for one or
+    more weight evolution experiments with the given parameters. This method
+    assumes the result files are already present in their respective
+    directories.
+    """
+    n_repeats = 5
+    fit_progress_arrays = []
+    inc_krs = []
+    for (i, exp_name) in enumerate(exp_names):
+        best_inc_kr = 3.0
+        best_fit_progress_arr = None
+
+        dir_path = f"res/{exp_name}"
+        for j in range(n_repeats):
+            # Load results
+            filepath = f"{dir_path}/run{j}_results.pickle"
+            results = None
+            with open(filepath, "rb") as f:
+                results = pickle.load(f)
+            (best_indiv, best_fitness_per_gen, top_ten, fit, inc_kr) = results
+
+            inc_krs.append(inc_kr)
+
+            if inc_kr < best_inc_kr:
+                best_inc_kr = inc_kr
+                best_fit_progress_arr = best_fitness_per_gen
+
+        plot_gens_vs_fitness(exp_labels[i], best_fit_progress_arr)
+        fit_progress_arrays.append(best_fit_progress_arr)
+
+    labels = np.repeat(exp_labels, n_repeats)
+    plot_var_vs_key_rank(labels, inc_krs, box=True, var_name="Fitness function")
+    plot_gens_vs_fitness(file_tag, *fit_progress_arrays,
+                         labels=exp_labels)
 
 
 def ga_grid_search_find_best_network():

@@ -420,7 +420,8 @@ def gen_experiment_name(pop_size, atk_set_size, select_fun, n_folds=1,
     return f"ps{pop_size}-{atk_set_size}t-{n_folds}f-{sf_str}-{lm_str}"
 
 
-def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor):
+def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor,
+                          wr, sgd):
     """
     Generates an experiment name for a GA run using the given arguments.
 
@@ -437,12 +438,17 @@ def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor):
         bt: Balanced trace samples on/off.
         tp: Truncation proportion.
         cor: Crossover rate.
+        wr: Initial weight randomisation on/off.
+        sgd: Intergenerational SGD training on/off.
     """
     sf_str = f"{sf[0]}sel"
     fi_str = "fi" if fi else "nofi"
     bt_str = "balnc" if bt else "rndtr"
+    wi_str = "xavwi" if not wr else "randwi"  # Describes weight init method
+    sgd_str = "sgd" if sgd else "nosgd"
     return f"ps{ps*2}-mp{mp}-mr{mr}-mpdr{mpdr}-fdr{fdr}-ass{ass}-" + \
-           f"{sf_str}-tp{tp}-mt_{mt.id()}-{fi_str}-{bt_str}-cor{cor}"
+           f"{sf_str}-tp{tp}-mt_{mt.id()}-{fi_str}-{bt_str}-cor{cor}-" + \
+           f"{wi_str}-{sgd_str}"
 
 
 def gen_neat_exp_name(pop_size, gens, hw, pool, data_name):
