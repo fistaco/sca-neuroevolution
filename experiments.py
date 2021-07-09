@@ -267,6 +267,48 @@ def weight_evo_results_from_exp_names(exp_names, exp_labels, file_tag,
                          labels=exp_labels)
 
 
+def eval_best_nn_from_exp_name(exp_name, dataset_name, exp_label, k_idx=1,
+                               hw=True):
+    """
+    Obtain the average key rank of the given `exp_name`'s best resulting NN on
+    the designated data set over 100 folds and stores the result.
+    """
+    n_repeats = 5
+    dir_path = f"res/{exp_name}"
+
+    # Find the best run and load the corresponding results
+    best_inc_kr = 3.0
+    best_results = None
+    for i in range(n_repeats):
+        # Load results
+        filepath = f"{dir_path}/run{i}_results.pickle"
+        results = None
+        with open(filepath, "rb") as f:
+            results = pickle.load(f)
+        (_, _, _, _, inc_kr) = results
+
+        if inc_kr < best_inc_kr:
+            best_inc_kr = inc_kr
+            best_results = results
+
+    (best_indiv, best_fitness_per_gen, top_ten, fit, inc_kr) = best_results
+
+    nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
+    nn.set_weights(best_indiv.weights)
+
+    (_, _, _, _, x_atk, y_atk, pt_atk, k_atk) = load_data(dataset_name, hw=hw)
+
+    kfold_ascad_atk_with_varying_size(
+        100,
+        nn,
+        subkey_idx=k_idx,
+        experiment_name=exp_label,
+        atk_data=(x_atk, y_atk, k_atk, pt_atk),
+        parallelise=True,
+        hw=hw
+    )
+
+
 def ga_grid_search_find_best_network():
     """
     Compares all of the saved potential best networks by attacking a smaller
