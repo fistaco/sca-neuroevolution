@@ -20,15 +20,16 @@ def plot_gens_vs_fitness(experiment_name, *fit_progress_lists, labels=None):
 
     # max_gens = max([len(a) for a in fit_progress_lists])
     for fitnesses_per_gen in fit_progress_lists:
-        nonzero_fits = np.array(fitnesses_per_gen)
+        fits = np.array(fitnesses_per_gen)
+        nonzero_fits = np.array(fits)
         nonzero_fits = nonzero_fits[nonzero_fits != 0]
-        fitnesses_per_gen[len(nonzero_fits):] = nonzero_fits[-1]
+        fits[len(nonzero_fits):] = nonzero_fits[-1]
 
         # fit_progress = np.zeros(max_gens)
         # fit_progress[:len_nz] = fitnesses_per_gen[:len_nz]
         # fit_progress[len_nz:] = nonzero_fits[-1]
 
-        plt.plot(np.arange(len(fitnesses_per_gen)), fitnesses_per_gen)
+        plt.plot(np.arange(len(fits)), fits)
 
     if labels:
         plt.legend(labels)
