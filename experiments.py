@@ -55,6 +55,7 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
                        parallelise=parallelise)
     (best_indiv, config) = neatsca.run(x_train, y_train, pt_train, k_train, hw)
 
+    print("Commencing training of best network.")
     nn = genome_to_keras_model(best_indiv, config)
     nn = train(nn, x_train, y_train)
     nn.save("neat_most_recent_best_nn.h5")
@@ -65,7 +66,7 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
     with open(f"neat_results/{exp_name}_results.pickle", "wb") as f:
         pickle.dump((best_fitness_per_gen, top_ten), f)
 
-    # Evaluate on test set
+    print("Commencing evaluation on attack set.")
     kfold_ascad_atk_with_varying_size(
         100,
         nn,
@@ -104,7 +105,8 @@ def weight_evo_experiment_from_params(cline_args, remote=True):
 
 def single_weight_evo_grid_search_experiment(
     exp_idx=0, run_idx=0, params=None, remote=True, parallelise=True, hw=True,
-    gens=1000, static_seed=False, randomise_init_weights=True, sgd=False):
+    gens=1000, static_seed=False, randomise_init_weights=True, sgd=False,
+    dataset_name="cw", k_idx=1):
     """
     Executes an averaged GA experiment over 10 runs, where the arguments of the
     GA are determined by the given index for the generated list of GA
@@ -118,10 +120,14 @@ def single_weight_evo_grid_search_experiment(
     #     load_prepared_ascad_vars(
     #         subkey_idx=subkey_idx, scale=True, use_mlp=True, remote=remote
     #     )
-    subkey_idx = 1
-    (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
-        load_chipwhisperer_data(8000, subkey_idx=1, remote=remote, hw=hw)
-    k_train = k_atk = k
+    # subkey_idx = 1
+    # (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
+    #     load_chipwhisperer_data(8000, subkey_idx=k_idx, remote=remote, hw=hw)
+    # k_train = k_atk = k
+
+    (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
+        load_data(dataset_name, hw=hw, remote=remote)
+
     nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
 
     # Generate the remaining arguments using the given experiment index
@@ -158,6 +164,7 @@ def single_weight_evo_grid_search_experiment(
         balanced_traces=bt,
         n_folds=n_folds,
         run_idx=run_idx,
+        subkey_idx=k_idx,
         experiment_name=exp_name,
         save_results=True,
         remote=remote,

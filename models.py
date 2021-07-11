@@ -281,8 +281,7 @@ def build_small_cnn_rand_init():
 
 def train(nn, x, y):
     """
-    Trains the given `nn` with SGD on the given train (`x`) and test (`y`)
-    sets.
+    Trains the given `nn` with SGD on the given inputs (`x`) and labels (`y`).
     """
     y_cat = y
     if not is_categorical(y):

@@ -63,7 +63,7 @@ class GeneticAlgorithm:
             print(f"Initialising process pool with pool size = {pool_size}")
 
             self.pool = mp.Pool(pool_size)
-        
+
         # Use a dictionary to enable simple selection method parametrisation
         selection_methods = {
             "roulette_wheel": self.roulette_wheel_selection,

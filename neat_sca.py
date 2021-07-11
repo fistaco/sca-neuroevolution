@@ -6,6 +6,7 @@ import neat
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.keras.layers import Concatenate, Flatten
 from tensorflow.python.ops.gen_nn_ops import avg_pool
 
 from data_processing import (load_chipwhisperer_data, load_prepared_ascad_vars,
@@ -79,7 +80,8 @@ class NeatSca:
         eval_func = self.pe.evaluate if self.parallelise else eval_pop_fitness
         best_indiv = self.population.run(eval_func, self.max_gens)
 
-        del self.pe
+        if self.parallelise:
+            del self.pe
 
         return (best_indiv, self.config)
 
@@ -180,13 +182,15 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
             pool_size=2, strides=2, input_shape=(n_inputs, 1)
         )(inputs)
 
+    unreachable = {}  # Track unreachable nodes to terminate interrupted paths
+
     node_outputs = {}
     for layer in layers:
         for node_id in layer:
             # Construct connections separately for inputs & hidden nodes
             inc_input_idxs = []
             inc_hidden_node_ids = []
-            inc_weights = []  # TODO: Leave weights either unused or optional
+            inc_weights = []
             for (conn_id, conn) in genome.connections.items():
                 if not conn.enabled:
                     continue
@@ -198,13 +202,15 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
                         true_idx = -start_id - 1
                         inc_input_idxs.append(true_idx)
                     else:
-                        inc_hidden_node_ids.append(start_id)
+                        if not start_id in unreachable:
+                            inc_hidden_node_ids.append(start_id)
 
                     if use_genome_params:
                         inc_weights.append(conn.weight)
 
             # Ignore nodes without incoming connections
             if not inc_input_idxs and not inc_hidden_node_ids:
+                unreachable[271] = True
                 continue
 
             node = genome.nodes[node_id]
@@ -213,7 +219,7 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
             inc_input_idxs = np.sort(inc_input_idxs)
             input_idx_groups = consecutive_int_groups(inc_input_idxs)
             input_layers = [
-                keras.layers.Flatten()(init_layer[:, idxs[0]:(idxs[-1] + 1), :])
+                Flatten()(init_layer[:, idxs[0]:(idxs[-1] + 1), :])
                 for idxs in input_idx_groups
             ]
 
@@ -227,7 +233,7 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
             elif not input_layers and len(hidden_layers) == 1:
                 incoming = hidden_layers[0]
             else:
-                incoming = keras.layers.Concatenate()(input_layers + hidden_layers)
+                incoming = Concatenate()(input_layers + hidden_layers)
 
             kernel_init = keras.initializers.glorot_uniform()
             bias_init = keras.initializers.zeros()
