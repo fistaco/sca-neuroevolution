@@ -210,7 +210,7 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
 
             # Ignore nodes without incoming connections
             if not inc_input_idxs and not inc_hidden_node_ids:
-                unreachable[271] = True
+                unreachable[node_id] = True
                 continue
 
             node = genome.nodes[node_id]
