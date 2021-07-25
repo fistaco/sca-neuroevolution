@@ -2,11 +2,12 @@ import configparser
 import multiprocessing as mp
 import pickle
 
+import graphviz
 import neat
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
-from tensorflow.keras.layers import Concatenate, Flatten
+from tensorflow.keras.layers import Concatenate, Dense, Flatten, LeakyReLU
 from tensorflow.python.ops.gen_nn_ops import avg_pool
 
 from data_processing import (load_chipwhisperer_data, load_prepared_ascad_vars,
@@ -26,7 +27,7 @@ num_folds = 1
 
 class NeatSca:
     def __init__(self, pop_size, max_gens, config_filepath="./neat-config",
-                 remote=False, parallelise=True):
+                 remote=False, parallelise=True, comp_thresh=3.0):
         global x, g_hw, avg_pooling
 
         self.pop_size = pop_size
@@ -51,6 +52,7 @@ class NeatSca:
         self.config.pop_size = pop_size
         self.config.genome_config.num_inputs = n_inputs
         self.config.genome_config.num_outputs = n_outputs
+        self.config.species_set_config.compatibility_threshold = comp_thresh
 
         self.population = neat.Population(self.config)
         self.population.add_reporter(neat.StdOutReporter(False))
@@ -242,7 +244,6 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
                 kernel_init = keras.initializers.Constant(inc_weights)
                 bias_init = keras.initializers.Constant(node.bias)
 
-            # Define the layer computation for this neuron
             node_outputs[node_id] = keras.layers.Dense(
                 1, activation=node.activation,
                 kernel_initializer=kernel_init,
@@ -261,6 +262,31 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
     final_output_layer = keras.layers.Softmax()(final_output_layer)
 
     return keras.Model(inputs, final_output_layer)
+
+
+def draw_genome_nn(genome, label="", only_draw_hidden=True, n_outputs=256):
+    """
+    Draws the NN corresponding to the given `genome` as a graph.
+    """
+    dot = graphviz.Digraph("NEAT NN visualisation", format="png")
+
+    nodes = genome.nodes.keys()
+    edges = genome.connections.items()
+
+    if only_draw_hidden:
+        nodes = [n for n in nodes if n >= n_outputs]
+        edges = [
+            ((i, o), c) for ((i, o), c) in edges
+            if i >= n_outputs and o >= n_outputs and c.enabled
+        ]
+
+    for node_id in nodes:
+        dot.node(str(node_id), str(node_id))
+
+    for ((i, j), _) in edges:
+        dot.edge(str(i), str(j))
+
+    dot.render(f"fig/neat-nn-vis-{label}", view=False)
 
 
 def set_global_data(dataset_name, n_traces, subkey_idx, n_folds=1,

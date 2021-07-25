@@ -28,8 +28,8 @@ from models import (build_small_cnn_ascad, train, build_small_mlp_ascad,
                     build_small_mlp_ascad_trainable_first_layer,
                     load_nn_from_experiment_results, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
-                    small_mlp_cw, mini_mlp_cw, small_mlp_cw_func)
-from neat_sca import NeatSca, genome_to_keras_model
+                    small_mlp_cw, mini_mlp_cw, small_mlp_cw_func, train, build_single_hidden_layer_mlp_ascad)
+from neat_sca import NeatSca, genome_to_keras_model, draw_genome_nn
 from nn_genome import NeuralNetworkGenome
 from plotting import (plot_gens_vs_fitness, plot_n_traces_vs_key_rank,
                       plot_var_vs_key_rank, plot_2d, plot_3d)
@@ -37,7 +37,7 @@ from result_processing import ResultCategory, filter_df
 
 
 def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
-                    parallelise=True, use_sgd=True, avg_pooling=True,
+                    parallelise=True, comp_thresh=3.0, avg_pooling=True,
                     dataset_name="cw"):
     # subkey_idx = 1
     # (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
@@ -51,20 +51,22 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
         pop_size, max_gens, hw, avg_pooling, dataset_name)
 
     # Train with NEAT
-    neatsca = NeatSca(pop_size, max_gens, remote=remote,
-                       parallelise=parallelise)
+    neatsca = NeatSca(
+        pop_size, max_gens, remote=remote, parallelise=parallelise,
+        comp_thresh=comp_thresh
+    )
     (best_indiv, config) = neatsca.run(x_train, y_train, pt_train, k_train, hw)
-
-    print("Commencing training of best network.")
-    nn = genome_to_keras_model(best_indiv, config)
-    nn = train(nn, x_train, y_train)
-    nn.save("neat_most_recent_best_nn.h5")
 
     (best_fitness_per_gen, top_ten) = neatsca.get_results()
     plot_gens_vs_fitness(exp_name, best_fitness_per_gen)
 
     with open(f"neat_results/{exp_name}_results.pickle", "wb") as f:
         pickle.dump((best_fitness_per_gen, top_ten), f)
+
+    print("Commencing training of best network.")
+    nn = genome_to_keras_model(best_indiv, config, use_avg_pooling=avg_pooling)
+    nn = train(nn, x_train, y_train)
+    nn.save("neat_most_recent_best_nn.h5")
 
     print("Commencing evaluation on attack set.")
     kfold_ascad_atk_with_varying_size(
@@ -755,6 +757,29 @@ def ensemble_model_sca(nns, n_folds, x_atk, y_atk, true_subkey, ptexts,
     print(f"Mean key rank with ensemble method: {ensemble_key_ranks[-1]}")
 
 
+def train_and_attack_ascad(nn=None, hw=False):
+    """
+    Trains the given NN with SGD and attacks the ASCAD data set with it. If no
+    NN is given, the MLP architecture by Zaid et al. is used.
+    """
+    subkey_idx = 2
+    (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
+        load_data("ascad", hw=hw, remote=False)
+
+    nn = nn if nn is not None else build_single_hidden_layer_mlp_ascad()
+    nn = train(nn, x_train, y_train, verbose=1)
+
+    kfold_ascad_atk_with_varying_size(
+        30,
+        nn,
+        subkey_idx=subkey_idx,
+        experiment_name="test",
+        atk_data=(x_atk, y_atk, k_atk, pt_atk),
+        parallelise=True,
+        hw=hw
+    )
+
+
 def small_cnn_sgd_sca(save=False, subkey_idx=2):
     # Load the ASCAD data set with 700 points per trace
     PATH = "./../ASCAD_data/ASCAD_databases/ASCAD.h5"
@@ -930,6 +955,22 @@ def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
         plot_n_traces_vs_key_rank(experiment_name, mean_ranks)
     
     return mean_ranks
+
+
+def draw_neat_nn_from_exp_file(exp_name, exp_label, only_draw_hidden=True):
+    """
+    Uses dot to draw a visualisation of the best NN resulting from a NEAT run
+    by extracting the best NN from the result file corresponding to the
+    given `exp_name`.
+
+    """
+    with open(f"neat_results/{exp_name}_results.pickle", "rb") as f:
+        (_, top_ten) = pickle.load(f)
+        best_indiv = top_ten[0]
+
+    n_outputs = 9 if "hw" in exp_name else 256
+
+    draw_genome_nn(best_indiv, exp_label, only_draw_hidden, n_outputs)
 
 
 def test_fitness_function_consistency(nn_quality="medium"):
