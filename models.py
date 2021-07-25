@@ -84,19 +84,20 @@ def load_small_cnn_ascad_no_batch_norm():
     return keras.models.load_model(path, compile=False)
 
 
-def build_small_mlp_ascad(save=False):
+def build_small_mlp_ascad(save=False, hw=False):
     """
     Constructs and returns the small MLP proposed by Wouters et al. to attack
     the ASCAD data set. This model omits the CONV layer from the model proposed
     by Zaid et al.
     """
+    n_output_classes = 9 if hw else 256
     mlp = keras.Sequential(
         [
             keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(700,1)),
             keras.layers.Flatten(),
             keras.layers.Dense(10, activation=tf.nn.selu),
             keras.layers.Dense(10, activation=tf.nn.selu),
-            keras.layers.Dense(256, activation=tf.nn.softmax)
+            keras.layers.Dense(n_output_classes, activation=tf.nn.softmax)
         ]
     )
 
@@ -114,6 +115,24 @@ def load_small_mlp_ascad(trained=False):
     path = "./trained_models/efficient_mlp_ascad_model_6kw.h5" if not trained \
         else "./trained_models/official_ascad_mlp_trained.hdf5"
     return keras.models.load_model(path, compile=False)
+
+
+def build_single_hidden_layer_mlp_ascad():
+    """
+    Constructs and returns the small MLP proposed by Wouters et al. to attack
+    the ASCAD data set. This model omits the CONV layer from the model proposed
+    by Zaid et al.
+    """
+    mlp = keras.Sequential(
+        [
+            keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(700,1)),
+            keras.layers.Flatten(),
+            keras.layers.Dense(10, activation=tf.nn.selu),
+            keras.layers.Dense(256, activation=tf.nn.softmax)
+        ]
+    )
+
+    return mlp
 
 
 def small_mlp_cw(build=False, hw=False, n_dense=2):
@@ -279,7 +298,7 @@ def build_small_cnn_rand_init():
     return cnn
 
 
-def train(nn, x, y):
+def train(nn, x, y, verbose=0):
     """
     Trains the given `nn` with SGD on the given inputs (`x`) and labels (`y`).
     """
@@ -289,7 +308,7 @@ def train(nn, x, y):
     optimizer = keras.optimizers.Adam(learning_rate=5e-3)
     loss_fn = keras.losses.CategoricalCrossentropy()
     nn.compile(optimizer, loss_fn)
-    history = nn.fit(x, y_cat, batch_size=50, epochs=50, verbose=0)
+    history = nn.fit(x, y_cat, batch_size=50, epochs=50, verbose=verbose)
 
     return nn
 
