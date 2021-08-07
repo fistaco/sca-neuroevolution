@@ -307,7 +307,7 @@ def incremental_keyrank(key_ranks, set_size, preds, true_labels):
     Computes the incremental key rank metric as the % of traces at which kr 0
     was achieved + kr at 10% traces + 0.5*(kr at 50% traces) + 0.5*(1 - acc).
     """
-    kr0_n_traces = first_zero_value_idx(key_ranks, set_size)/(set_size - 1)
+    kr0_n_traces = first_zero_value_idx(key_ranks)/(set_size - 1)
     kr_10pct = min(key_ranks[round(set_size*0.1) - 1], 128)/128
     kr_50pct = min(key_ranks[round(set_size*0.5) - 1], 128)/128
     acc = accuracy(preds, true_labels)
@@ -594,7 +594,7 @@ def gen_max_resources_ga_grid_search_arg_lists():
     return argss
 
 
-def first_idx_with_value(a, x, a_len=None):
+def first_idx_with_value(a, x):
     """
     Finds the index in array a where element x first appears. Returns the last
     index if the element is not found.
@@ -602,14 +602,14 @@ def first_idx_with_value(a, x, a_len=None):
     for (i, n) in enumerate(a):
         if n == x:
             return i
-    return a_len - 1 or len(a) - 1
+    return len(a) - 1
 
 
-def first_zero_value_idx(a, a_len=None):
+def first_zero_value_idx(a):
     """
     finds the index in array a where value 0 first appears.
     """
-    return first_idx_with_value(a, 0, a_len)
+    return first_idx_with_value(a, 0)
 
 
 def element_wise_remaining_max_replace(a):
