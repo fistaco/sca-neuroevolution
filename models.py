@@ -3,6 +3,7 @@ from tensorflow import keras
 from tensorflow.keras import activations
 from tensorflow.python.keras.engine import input_layer
 from tensorflow.python.keras.engine.input_layer import Input
+from tensorflow.python.keras.layers.core import Flatten
 from tensorflow.python.ops.control_flow_ops import group
 from tensorflow.python.ops.gen_array_ops import split
 import numpy as np
@@ -117,22 +118,25 @@ def load_small_mlp_ascad(trained=False):
     return keras.models.load_model(path, compile=False)
 
 
-def build_single_hidden_layer_mlp_ascad():
+def build_single_hidden_layer_mlp_ascad(hw=False, avg_pooling=True):
     """
     Constructs and returns the small MLP proposed by Wouters et al. to attack
     the ASCAD data set. This model omits the CONV layer from the model proposed
     by Zaid et al.
     """
-    mlp = keras.Sequential(
-        [
-            keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(700,1)),
-            keras.layers.Flatten(),
-            keras.layers.Dense(10, activation=tf.nn.selu),
-            keras.layers.Dense(256, activation=tf.nn.softmax)
-        ]
-    )
+    inputs = keras.Input(shape=(700, 1))
 
-    return mlp
+    if avg_pooling:
+        x = keras.layers.AveragePooling1D(pool_size=2, strides=2)(inputs)
+        x = Flatten()(x)
+    else:
+        x = Flatten()(inputs)
+    
+
+    x = keras.layers.Dense(10, activation=tf.nn.selu)(x)
+    x = keras.layers.Dense((9 if hw else 256), activation=tf.nn.softmax)(x)
+
+    return keras.Model(inputs, x)
 
 
 def small_mlp_cw(build=False, hw=False, n_dense=2):
