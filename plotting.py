@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 from matplotlib import cm
 import numpy as np
 
+from helpers import first_zero_value_idx
+
 
 def plot_gens_vs_fitness(experiment_name, *fit_progress_lists, labels=None):
     """
@@ -21,8 +23,10 @@ def plot_gens_vs_fitness(experiment_name, *fit_progress_lists, labels=None):
     # max_gens = max([len(a) for a in fit_progress_lists])
     for fitnesses_per_gen in fit_progress_lists:
         fits = np.array(fitnesses_per_gen)
-        nonzero_fits = np.array(fits)
-        nonzero_fits = nonzero_fits[nonzero_fits != 0]
+        close_to_zero_idxs = np.isclose(fits, np.zeros(len(fits)), atol=1e-4)
+        fits[close_to_zero_idxs] = 0        
+
+        nonzero_fits = fits[fits != 0]
         fits[len(nonzero_fits):] = nonzero_fits[-1]
 
         # fit_progress = np.zeros(max_gens)
@@ -39,7 +43,7 @@ def plot_gens_vs_fitness(experiment_name, *fit_progress_lists, labels=None):
     plt.clf()
 
 
-def plot_n_traces_vs_key_rank(experiment_name, *key_rankss, labels=None):
+def plot_n_traces_vs_key_rank(exp_name, *key_rankss, labels=None):
     """
     Constructs and saves a plot with the amount of traces on the x-axis and the
     (mean) key rank on the y-axis.
@@ -52,18 +56,27 @@ def plot_n_traces_vs_key_rank(experiment_name, *key_rankss, labels=None):
 
         labels: A list of labels corresponding to the lists of key ranks.
     """
-    plt.title(f"Amount of traces ~ key rank ({experiment_name})")
+    plt.title(f"Amount of traces ~ key rank ({exp_name})")
     plt.xlabel("Traces")
     plt.ylabel("Key rank")
+    
+    xlim_max = -1
 
     for key_ranks in key_rankss:
+        # xlim_max should be the approx. the last idx where kr 0 is achieved
+        cutoff_idx = first_zero_value_idx(key_ranks) + 50
+        xlim_max = max(xlim_max, cutoff_idx)
+
         plt.plot(np.arange(len(key_ranks)), key_ranks)
+
+    plt.xlim(0, min(xlim_max, len(key_rankss[0])))
     plt.ylim(0, 180)
     plt.grid(True)
     if labels:
         plt.legend(labels)
 
-    plt.savefig(f"./fig/{experiment_name}_traces_vs_keyrank.png")
+    formatted_exp_name = exp_name.replace(" ", "_")
+    plt.savefig(f"./fig/{formatted_exp_name}_traces_vs_keyrank.png")
     plt.clf()
 
 
