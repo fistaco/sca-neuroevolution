@@ -154,3 +154,7 @@ test.py
 
 # Job scripts
 job_scripts/
+
+# Enable project-specific updates to the NEAT-Python library in the repository
+!env/Lib/site-packages/neat/
+!env/Lib/site-packages/neat/*
