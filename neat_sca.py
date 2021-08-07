@@ -10,8 +10,7 @@ from tensorflow import keras
 from tensorflow.keras.layers import Concatenate, Dense, Flatten, LeakyReLU
 from tensorflow.python.ops.gen_nn_ops import avg_pool
 
-from data_processing import (load_chipwhisperer_data, load_prepared_ascad_vars,
-                             sample_traces, load_data)
+from data_processing import (sample_traces, load_data, to_hw)
 from helpers import (get_pool_size, neat_nn_predictions, compute_fitness,
                      consecutive_int_groups, is_categorical)
 from metrics import MetricType
@@ -27,7 +26,7 @@ num_folds = 1
 
 class NeatSca:
     def __init__(self, pop_size, max_gens, config_filepath="./neat-config",
-                 remote=False, parallelise=True, comp_thresh=3.0):
+                 remote=False, parallelise=True, only_evolve_hidden=False):
         global x, g_hw, avg_pooling
 
         self.pop_size = pop_size
@@ -36,22 +35,17 @@ class NeatSca:
         n_inputs = len(x[0]) if not avg_pooling else len(x[0])//2
         n_outputs = 9 if g_hw else 256
 
-        # Modify config file according to the given parameters
-        # config = configparser.ConfigParser()
-        # config.read("neat-config")
-        # config["NEAT"]["pop_size"] = str(pop_size)
-        # config["DefaultGenome"]["num_inputs"] = str(n_inputs)
-        # config["DefaultGenome"]["num_outputs"] = str(n_outputs)
-        # with open(config_filepath, "w") as f:
-        #     config.write(f)
-
-        # TODO: Modify config file according to parameters before loading
-        self.config = neat.Config(neat.DefaultGenome, neat.DefaultReproduction,
-                      neat.DefaultSpeciesSet, neat.DefaultStagnation,
-                      config_filepath)
+        self.config = neat.Config(
+            neat.DefaultGenome, neat.DefaultReproduction,
+            neat.DefaultSpeciesSet, neat.DefaultStagnation, config_filepath,
+            only_evolve_hidden
+        )
         self.config.pop_size = pop_size
         self.config.genome_config.num_inputs = n_inputs
+        self.config.genome_config.input_keys = [-i-1 for i in range(n_inputs)]
         self.config.genome_config.num_outputs = n_outputs
+        self.config.genome_config.output_keys = list(range(n_outputs))
+        comp_thresh = 0.53 if g_hw else 0.04
         self.config.species_set_config.compatibility_threshold = comp_thresh
 
         self.population = neat.Population(self.config)
@@ -107,6 +101,10 @@ def evaluate_genome_fitness(genome, config):
         genome: A (genome_id, genome) tuple.
     """
     global x, y, pt, k, k_idx, g_hw, metric, sgd_train, avg_pooling
+
+    # Set seeds to ensure equal opportunity in SGD training
+    tf.random.set_seed(77)
+    np.random.seed(77)
 
     # nn = neat.nn.FeedForwardNetwork.create(genome, config)
     # preds = neat_nn_predictions(nn, x, g_hw)
@@ -292,16 +290,24 @@ def draw_genome_nn(genome, label="", only_draw_hidden=True, n_outputs=256):
 def set_global_data(dataset_name, n_traces, subkey_idx, n_folds=1,
                     remote=False, hw=True,
                     metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
-                    balanced=False, use_sgd=True, use_avg_pooling=True):
-    data = load_data(dataset_name, hw, remote)
+                    balanced=False, use_sgd=True, use_avg_pooling=True,
+                    seed=None):
+    load_hw_labels = hw if not balanced else False  # Balance on ID labels
+    data = load_data(dataset_name, load_hw_labels, remote)
+
+    if seed:
+        np.random.seed(seed)
 
     global x, y, pt, k, k_idx, g_hw, metric, num_folds, sgd_train, avg_pooling
     x, y, pt, k = data[0], data[1], data[2], data[3]
     k_idx, g_hw, metric, num_folds = subkey_idx, hw, metric_type, n_folds
     sgd_train, avg_pooling = use_sgd, use_avg_pooling
 
-    n_cls = 9 if hw else 256
+    n_cls = 9 if load_hw_labels else 256
     x, y, pt = sample_traces(n_traces, x, y, pt, n_cls, balanced=balanced)
+
+    if hw and not load_hw_labels:
+        y = to_hw(y)
 
     if metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
         y = tf.keras.utils.to_categorical(y, (9 if hw else 256))
