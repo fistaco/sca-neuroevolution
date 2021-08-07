@@ -7,12 +7,14 @@ import neat
 import numpy as np
 import tensorflow as tf
 from tensorflow import keras
+from tensorflow.python.ops.gen_nn_ops import data_format_dim_map
 
 from constants import METRIC_TYPE_MAP, SELECT_FUNCTION_MAP
 from data_processing import (load_ascad_atk_variables, load_ascad_data,
                              load_prepared_ascad_vars, sample_data,
                              scale_inputs, shuffle_data, balanced_sample,
-                             load_chipwhisperer_data, load_data)
+                             load_chipwhisperer_data, load_data,
+                             commonly_used_subkey_idx)
 from genetic_algorithm import (GeneticAlgorithm, evaluate_fitness,
                                train_nn_with_ga)
 from helpers import (compute_fold_keyranks, compute_mem_req,
@@ -37,8 +39,8 @@ from result_processing import ResultCategory, filter_df
 
 
 def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
-                    parallelise=True, comp_thresh=3.0, avg_pooling=True,
-                    dataset_name="cw"):
+                    parallelise=True, avg_pooling=True,
+                    dataset_name="cw", only_evolve_hidden=False):
     # subkey_idx = 1
     # (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
     #     load_chipwhisperer_data(8000, subkey_idx=1, remote=remote, hw=hw)
@@ -53,7 +55,7 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
     # Train with NEAT
     neatsca = NeatSca(
         pop_size, max_gens, remote=remote, parallelise=parallelise,
-        comp_thresh=comp_thresh
+        only_evolve_hidden=only_evolve_hidden
     )
     (best_indiv, config) = neatsca.run(x_train, y_train, pt_train, k_train, hw)
 
@@ -271,7 +273,7 @@ def weight_evo_results_from_exp_names(exp_names, exp_labels, file_tag,
         fit_progress_arrays.append(best_fit_progress_arr)
 
     labels = np.repeat(exp_labels, n_repeats)
-    plot_var_vs_key_rank(labels, inc_krs, box=True, var_name="Fitness function")
+    plot_var_vs_key_rank(labels, inc_krs, box=True, var_name="Experiment")
     plot_gens_vs_fitness(file_tag, *fit_progress_arrays,
                          labels=exp_labels)
 
@@ -778,6 +780,33 @@ def train_and_attack_ascad(nn=None, hw=False):
         parallelise=True,
         hw=hw
     )
+
+
+def train_and_attack_with_multiple_nns(nns, hws, labels, dataset_name="ascad",
+                                       exp_name="multi_nn_test"):
+    """
+    Train all given NNs on the ASCAD data set prepared according to the
+    corresponding index in the Hamming weight boolean list `hws` and display
+    the resulting key rank performances in one plot.
+    """
+    subkey_idx = commonly_used_subkey_idx(dataset_name)
+
+    mean_rankss = []
+    for (nn, hw) in zip(nns, hws):
+        (x_train, y_train, _, _, x_atk, y_atk, pt_atk, k_atk) = \
+            load_data(dataset_name, hw=hw, remote=False)
+
+        nn = train(nn, x_train, y_train, verbose=1)
+
+        y_pred_probs = nn.predict(x_atk)
+
+        mean_ranks = kfold_mean_key_ranks(
+            y_pred_probs, pt_atk, k_atk, 15, subkey_idx, "", parallelise=True,
+            remote=False, hw=hw
+        )
+        mean_rankss.append(mean_ranks)
+
+    plot_n_traces_vs_key_rank(exp_name, *mean_rankss, labels)
 
 
 def small_cnn_sgd_sca(save=False, subkey_idx=2):
