@@ -7,7 +7,8 @@ from sklearn import preprocessing
 from constants import HW
 
 
-def load_data(dataset_name, hw=False, remote=False, noise=False, desync=0):
+def load_data(dataset_name, hw=False, remote=False, noise=False,
+              noise_std=0.05, desync=0):
     load_funcs = {
         "ascad": load_prepared_ascad_vars,
         "ascad_desync50": 7,
@@ -18,21 +19,25 @@ def load_data(dataset_name, hw=False, remote=False, noise=False, desync=0):
 
     # Load (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk).
     # Some methods only return 1 key, in which case we reformat the tuple.
-    x = load_funcs[dataset_name](hw=hw, remote=remote)
+    x = list(load_funcs[dataset_name](hw=hw, remote=remote))
 
     # Load train and attack traces with countermeasures if desired
     if noise:
-        x[0] = np.load(f"{dataset_name}_train_traces_noisy.npy")
-        x[3] = np.load(f"{dataset_name}_atk_traces_noisy.npy")
+        # x[0] = np.load(f"{dataset_name}_train_traces_noisy.npy")
+        # x[3] = np.load(f"{dataset_name}_atk_traces_noisy.npy")
+        x[0] = apply_noise(x[0], std=noise_std)
+        x[3] = apply_noise(x[3], std=noise_std)
 
-    if not noise and desync > 0:  # Disallow multiple countermeasures for now
-        x[0] = np.load(f"{dataset_name}_train_traces_desync{desync}.npy")
-        x[3] = np.load(f"{dataset_name}_atk_traces_desync{desync}.npy")
+    if desync > 0:
+        # x[0] = np.load(f"{dataset_name}_train_traces_desync{desync}.npy")
+        # x[3] = np.load(f"{dataset_name}_atk_traces_desync{desync}.npy")
+        x[0] = apply_desync(x[0], desync_level=desync)
+        x[3] = apply_desync(x[3], desync_level=desync)
 
     if len(x) == 7:
         return (x[0], x[1], x[2], x[-1], x[3], x[4], x[5], x[6])
 
-    return x
+    return tuple(x)
 
 
 def commonly_used_subkey_idx(dataset_name):
@@ -327,7 +332,7 @@ def to_hw(labels):
     return labels
 
 
-def apply_noise(traces, mean=0.0, std=0.03):
+def apply_noise(traces, mean=0.0, std=0.05):
     """
     Applies Gaussian noise to the given `traces` according to the given `mean`
     and `variance`. It is assumed that `traces` is a multidimensional numpy
@@ -340,24 +345,20 @@ def apply_noise(traces, mean=0.0, std=0.03):
     return traces + np.random.normal(mean, std, traces.shape)
 
 
-def apply_desync(traces, desync_level):
+def apply_desync(traces, desync_level=50):
     """
     Desynchronises the given `traces` by displacing each trace point in each
-    trace by an amount of indices between 0 and the given `desync_level`.
+    trace by up to `desync_level` indices.
 
     This method implements the Gaussian noise algorithm from "Remove Some
     Noise: On Pre-processing of Side-channel Measurements with Autoencoders" by
     Wu et al.
     """
     new_traces = np.zeros(traces.shape, dtype=traces.dtype)
-    for (i, trace) in enumerate(traces):
-        new_trace = np.zeros(trace.shape, dtype=trace.dtype)
-        level = np.random.randint(0, desync_level)
 
-        for j in range(len(trace) - level):
-            new_trace[j] = trace[j + level]
-
-        new_traces[i] = new_trace
+    for i in range(len(traces)):
+        level = np.random.randint(1, desync_level + 1)
+        new_traces[i][:-level] = np.roll(traces[i], -level)[:-level]
 
     return new_traces
 

@@ -202,7 +202,7 @@ def small_mlp_cw_func(build=False, hw=False, n_dense=2):
 def mini_mlp_cw(build=False, hw=True):
     """
     Builds and returns an MLP for the ChipWhisperer data set with fewer than
-    2000 weights by stacking 2 pooling layers.
+    2000 weights by using a large pooling layer.
     """
     leakage_str = "hw" if hw else "id"
     model_str = f"./trained_models/mini_cw_mlp_2kw_{leakage_str}.h5"
@@ -210,8 +210,8 @@ def mini_mlp_cw(build=False, hw=True):
     if build:
         n_output_classes = 256 if not hw else 9
         mlp = keras.Sequential([
-            keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(5000,1)),
-            keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(2500,1)),
+            keras.layers.AveragePooling1D(pool_size=4, strides=4, input_shape=(5000,1)),
+            # keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(2500,1)),
             keras.layers.Flatten(),
             keras.layers.Dense(1, activation=tf.nn.selu),
             keras.layers.Dense(n_output_classes, activation=tf.nn.softmax)
@@ -221,6 +221,33 @@ def mini_mlp_cw(build=False, hw=True):
         return keras.models.load_model(model_str, compile=False)
 
     return mlp
+
+
+def cw_desync50(build=False, hw=True):
+    """
+    Builds and returns an MLP for the ChipWhisperer data set based on the
+    ASCAD desync50 model proposed by Zaid et al.
+
+    The model has 3813 parameters.
+    """
+    leakage_str = "hw" if hw else "id"
+    model_str = f"./trained_models/cw_desync50_{leakage_str}.h5"
+
+    if build:
+        n_output_classes = 256 if not hw else 9
+        nn = keras.Sequential([
+            keras.layers.AveragePooling1D(pool_size=4, strides=4, input_shape=(5000,1)),
+            keras.layers.Flatten(),
+            keras.layers.Dense(3, activation=tf.nn.selu),
+            keras.layers.Dense(3, activation=tf.nn.selu),
+            keras.layers.Dense(3, activation=tf.nn.selu),
+            keras.layers.Dense(n_output_classes, activation=tf.nn.softmax)
+        ])
+        nn.save(model_str)
+    else:
+        return keras.models.load_model(model_str, compile=False)
+
+    return nn
 
 
 def build_small_cnn_ascad_trainable_conv():
