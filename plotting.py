@@ -3,7 +3,7 @@ from matplotlib import cm
 import numpy as np
 import seaborn as sns
 
-from helpers import first_zero_value_idx
+from helpers import first_zero_value_idx, reshape_to_2d_singleton_array
 
 
 def plot_gens_vs_fitness(experiment_name, *fit_progress_lists, labels=None):
