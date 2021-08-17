@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 from matplotlib import cm
 import numpy as np
+import seaborn as sns
 
 from helpers import first_zero_value_idx
 
@@ -128,7 +129,9 @@ def plot_3d(xs, ys, zs, x_label, y_label, z_label, title):
     plt.title(title)
     x_mg, y_mg = np.meshgrid(xs, ys)
     # ax.plot_wireframe(x_mg, y_mg, zs)
-    surf = ax.plot_surface(x_mg, y_mg, zs, cmap=cm.coolwarm, linewidth=0, antialiased=False)
+    surf = ax.plot_surface(
+        x_mg, y_mg, zs, cmap=cm.coolwarm, linewidth=0, antialiased=False
+    )
     fig.colorbar(surf, shrink=0.5, aspect=5)
 
     ax.set_xticks(xs)
@@ -139,3 +142,34 @@ def plot_3d(xs, ys, zs, x_label, y_label, z_label, title):
 
     plt.savefig(f"./fig/{title}.png")
     plt.close()
+
+
+def nn_weights_heatmaps(weightss, exp_label):
+    """
+    Plots heatmaps for each layer of the given `weights` array, which should be
+    formatted according to Keras NN weight formatting.
+    """
+    vmin = np.min([np.min(ws) for ws in weightss])
+    vmax = np.max([np.max(ws) for ws in weightss])
+
+    for i in range(0, len(weightss), 2):
+        weights = reshape_to_2d_singleton_array(weightss[i])
+        biases = reshape_to_2d_singleton_array(weightss[i + 1])   
+
+        nn_layer_heatmap(
+            weights, f"{exp_label}_heatmap_weights_{i//2}", vmin, vmax
+        )
+        nn_layer_heatmap(
+            biases, f"{exp_label}_heatmap_biases_{i//2}", vmin, vmax
+        )
+
+
+def nn_layer_heatmap(layer, filename, vmin, vmax):
+    """
+    Plots the heatmap for the given array of weights or biases under the given
+    filename.
+    """
+    sns.heatmap(layer, vmin=vmin, vmax=vmax, xticklabels=False)
+    plt.savefig(f"{filename}.png")
+    # plt.savefig(f"fig/{filename}.png")
+    plt.clf()

@@ -5,7 +5,7 @@ import pickle
 
 import numpy as np
 from tensorflow.keras.losses import CategoricalCrossentropy
-from tensorflow.python.ops.gen_array_ops import size
+from tensorflow.python.ops.gen_array_ops import reshape, size
 CCE = CategoricalCrossentropy()
 
 from constants import INVERSE_SBOX, SBOX, HW
@@ -26,7 +26,8 @@ def exec_sca(ann_model, x_atk, y_atk, ptexts, true_subkey, subkey_idx=2):
 
 
 def kfold_mean_inc_kr(y_pred_probs, ptexts, y_true, true_subkey, k, key_idx=2,
-                      remote=False, parallelise=False, hw=False):
+                      remote=False, parallelise=False, hw=False,
+                      return_krs=False):
     """
     Computes the mean incremental key rank on the given list of prediction
     probability arrays & the data set's metadata over `k` folds.
@@ -34,6 +35,7 @@ def kfold_mean_inc_kr(y_pred_probs, ptexts, y_true, true_subkey, k, key_idx=2,
     # Store the incremental key rank for each fold
     set_size = len(y_pred_probs)
     inc_krs = np.zeros(k, dtype=np.float32)
+    mean_krs = np.zeros(set_size, dtype=np.float32)
 
     if parallelise:
         pool = mp.Pool(get_pool_size(remote))
@@ -50,6 +52,7 @@ def kfold_mean_inc_kr(y_pred_probs, ptexts, y_true, true_subkey, k, key_idx=2,
         for fold in range(k):
             fold_krs, s = map_results[fold], shuffled[fold]
             inc_krs[fold] = incremental_keyrank(fold_krs, set_size, s[0], s[2])
+            mean_krs += fold_krs/k
 
         pool.close()
         pool.join()
@@ -64,6 +67,10 @@ def kfold_mean_inc_kr(y_pred_probs, ptexts, y_true, true_subkey, k, key_idx=2,
             inc_krs[fold] = incremental_keyrank(
                 fold_krs, set_size, y_pred_probs, y_true
             )
+            mean_krs += fold_krs/k
+
+    if return_krs:
+        return (np.mean(inc_krs), mean_krs)
 
     return np.mean(inc_krs)
 
@@ -451,13 +458,17 @@ def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor,
            f"{wi_str}-{sgd_str}"
 
 
-def gen_neat_exp_name(pop_size, gens, hw, pool, data_name):
+def gen_neat_exp_name(pop_size, gens, hw, pool, data_name, hidden_only,
+                      fs_neat=False, noise=0.0, desync=0):
     """
     Generates an experiment name for a NEAT run using the given arguments.
     """
     lm_str = "hw" if hw else "id"
     pool_str = "pool" if pool else "no_pool"
-    return f"neat-ps{pop_size}-{lm_str}-{pool_str}-{data_name}-{gens}gens"
+    ho_str = "hidden" if hidden_only else "full"
+    fs_str = "-fs" if fs_neat else ""
+    return f"neat-ps{pop_size}-{lm_str}-{pool_str}-{data_name}-{gens}gens-" + \
+           f"{ho_str}-noise{noise}-desync{desync}{fs_str}"
 
 
 def calc_max_fitness(metric_type):
@@ -664,3 +675,20 @@ def is_categorical(labels):
     checking whether the inner layer has either 9 of 256 elements.
     """
     return len(np.shape(labels)) > 1 and np.shape(labels)[-1] > 1
+
+
+def reshape_to_2d_singleton_array(xs):
+    """
+    Reshapes a given 1- or 2-dimensional array to a 2D array of the same size,
+    but with each element being a singleton array.
+
+    This method is meant to be used to present NN layer information in a
+    uniform format.
+    """
+    assert len(xs.shape) <= 2
+
+    if len(xs.shape) == 1 or xs.shape[1] > 1:
+        size = max(xs.shape)
+        return np.reshape(xs, (size, 1))
+
+    return xs
