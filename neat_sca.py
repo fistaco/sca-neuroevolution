@@ -1,5 +1,6 @@
 import configparser
 import multiprocessing as mp
+from multiprocessing import pool
 import pickle
 
 import graphviz
@@ -21,18 +22,20 @@ x, y, pt, k, k_idx, g_hw = None, None, None, None, 1, True
 metric = MetricType.CATEGORICAL_CROSS_ENTROPY
 sgd_train = True
 avg_pooling = True
+pool_size = 2
 num_folds = 1
 
 
 class NeatSca:
     def __init__(self, pop_size, max_gens, config_filepath="./neat-config",
-                 remote=False, parallelise=True, only_evolve_hidden=False):
-        global x, g_hw, avg_pooling
+                 remote=False, parallelise=True, only_evolve_hidden=False,
+                 fs_neat=False):
+        global x, g_hw, avg_pooling, pool_size
 
         self.pop_size = pop_size
         self.max_gens = max_gens
 
-        n_inputs = len(x[0]) if not avg_pooling else len(x[0])//2
+        n_inputs = len(x[0]) if not avg_pooling else len(x[0])//pool_size
         n_outputs = 9 if g_hw else 256
 
         self.config = neat.Config(
@@ -45,6 +48,8 @@ class NeatSca:
         self.config.genome_config.input_keys = [-i-1 for i in range(n_inputs)]
         self.config.genome_config.num_outputs = n_outputs
         self.config.genome_config.output_keys = list(range(n_outputs))
+        self.config.genome_config.initial_connection = "full_nodirect" \
+            if not fs_neat else "fs_neat_hidden"
         comp_thresh = 0.53 if g_hw else 0.04
         self.config.species_set_config.compatibility_threshold = comp_thresh
 
@@ -100,7 +105,7 @@ def evaluate_genome_fitness(genome, config):
     Arguments:
         genome: A (genome_id, genome) tuple.
     """
-    global x, y, pt, k, k_idx, g_hw, metric, sgd_train, avg_pooling
+    global x, y, pt, k, k_idx, g_hw, metric, sgd_train, avg_pooling, pool_size
 
     # Set seeds to ensure equal opportunity in SGD training
     tf.random.set_seed(77)
@@ -108,7 +113,9 @@ def evaluate_genome_fitness(genome, config):
 
     # nn = neat.nn.FeedForwardNetwork.create(genome, config)
     # preds = neat_nn_predictions(nn, x, g_hw)
-    nn = genome_to_keras_model(genome, config, use_avg_pooling=avg_pooling)
+    nn = genome_to_keras_model(
+        genome, config, use_avg_pooling=avg_pooling, pool_param=pool_size
+    )
 
     if nn is None:
         return -777  # Impossibly low fitness regardless of metric
@@ -159,7 +166,7 @@ def multifold_genome_fitness_eval(genome, config):
 
 
 def genome_to_keras_model(genome, config, use_genome_params=False,
-                          use_avg_pooling=True):
+                          use_avg_pooling=True, pool_param=2):
     """
     Converts a NEAT-Python genome instance to a keras model using the keras
     functional API.
@@ -173,13 +180,13 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
         return None
 
     n_inputs = config.genome_config.num_inputs if not use_avg_pooling \
-        else config.genome_config.num_inputs*2
+        else config.genome_config.num_inputs*pool_param
     inputs = keras.Input(shape=(n_inputs, 1))
 
     init_layer = inputs
     if use_avg_pooling:
         init_layer = keras.layers.AveragePooling1D(
-            pool_size=2, strides=2, input_shape=(n_inputs, 1)
+            pool_size=pool_param, strides=pool_param, input_shape=(n_inputs, 1)
         )(inputs)
 
     unreachable = {}  # Track unreachable nodes to terminate interrupted paths
@@ -291,17 +298,19 @@ def set_global_data(dataset_name, n_traces, subkey_idx, n_folds=1,
                     remote=False, hw=True,
                     metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
                     balanced=False, use_sgd=True, use_avg_pooling=True,
-                    seed=None):
-    load_hw_labels = hw if not balanced else False  # Balance on ID labels
+                    pool_param=2, seed=None, balance_on_hw=False):
+    # Always load ID labels, unless not balancing or balancing on HW
+    load_hw_labels = hw if not balanced or balance_on_hw else False
     data = load_data(dataset_name, load_hw_labels, remote)
 
     if seed:
         np.random.seed(seed)
 
     global x, y, pt, k, k_idx, g_hw, metric, num_folds, sgd_train, avg_pooling
+    global pool_size
     x, y, pt, k = data[0], data[1], data[2], data[3]
     k_idx, g_hw, metric, num_folds = subkey_idx, hw, metric_type, n_folds
-    sgd_train, avg_pooling = use_sgd, use_avg_pooling
+    sgd_train, avg_pooling, pool_size = use_sgd, use_avg_pooling, pool_param
 
     n_cls = 9 if load_hw_labels else 256
     x, y, pt = sample_traces(n_traces, x, y, pt, n_cls, balanced=balanced)

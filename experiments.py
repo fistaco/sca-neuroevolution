@@ -28,7 +28,7 @@ from metrics import MetricType, keyrank
 import models
 from models import (build_small_cnn_ascad, train, build_small_mlp_ascad,
                     build_small_mlp_ascad_trainable_first_layer,
-                    load_nn_from_experiment_results, load_small_cnn_ascad,
+                    cw_desync50, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
                     small_mlp_cw, mini_mlp_cw, small_mlp_cw_func, train, build_single_hidden_layer_mlp_ascad)
 from neat_sca import NeatSca, genome_to_keras_model, draw_genome_nn
@@ -40,46 +40,62 @@ from result_processing import ResultCategory, filter_df
 
 def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
                     parallelise=True, avg_pooling=True,
-                    dataset_name="cw", only_evolve_hidden=False):
-    # subkey_idx = 1
-    # (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
-    #     load_chipwhisperer_data(8000, subkey_idx=1, remote=remote, hw=hw)
-    # k_train = k_atk = k
+                    dataset_name="cw", only_evolve_hidden=False, run_idx=-1,
+                    noise=0.0, desync=0):
     subkey_idx = 2
     (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
         load_data(dataset_name, hw=hw, remote=remote)
 
     exp_name = gen_neat_exp_name(
-        pop_size, max_gens, hw, avg_pooling, dataset_name)
+        pop_size, max_gens, hw, avg_pooling, dataset_name, only_evolve_hidden,
+        fs_neat=False, noise=noise, desync=desync
+    )
 
     # Train with NEAT
     neatsca = NeatSca(
         pop_size, max_gens, remote=remote, parallelise=parallelise,
-        only_evolve_hidden=only_evolve_hidden
+        only_evolve_hidden=only_evolve_hidden,
+        config_filepath=f"./neat-config-{dataset_name}"
     )
     (best_indiv, config) = neatsca.run(x_train, y_train, pt_train, k_train, hw)
 
     (best_fitness_per_gen, top_ten) = neatsca.get_results()
     plot_gens_vs_fitness(exp_name, best_fitness_per_gen)
 
-    with open(f"neat_results/{exp_name}_results.pickle", "wb") as f:
-        pickle.dump((best_fitness_per_gen, top_ten), f)
+    if run_idx < 0:
+        with open(f"neat_results/{exp_name}_results.pickle", "wb") as f:
+            pickle.dump((best_fitness_per_gen, top_ten), f)
 
     print("Commencing training of best network.")
     nn = genome_to_keras_model(best_indiv, config, use_avg_pooling=avg_pooling)
     nn = train(nn, x_train, y_train)
-    nn.save("neat_most_recent_best_nn.h5")
 
     print("Commencing evaluation on attack set.")
-    kfold_ascad_atk_with_varying_size(
-        100,
-        nn,
-        subkey_idx=subkey_idx,
-        experiment_name=exp_name,
-        atk_data=(x_atk, y_atk, k_atk, pt_atk),
-        parallelise=parallelise,
-        hw=hw
+    y_pred_probs = nn.predict(x_atk)
+    (inc_kr, mean_krs) = kfold_mean_inc_kr(
+        y_pred_probs, pt_atk, y_atk, k_atk, 100, subkey_idx, remote,
+        parallelise=parallelise, hw=hw, return_krs=True
     )
+
+    # Save results in the proper experiment directory if run_idx is specified
+    if run_idx >= 0:
+        filepath = f"neat_results/{exp_name}/run{run_idx}_results.pickle"
+        results = (
+            best_indiv, config, best_fitness_per_gen, top_ten, inc_kr, mean_krs
+        )
+
+        with open(filepath, "wb") as f:
+            pickle.dump(results, f)
+
+    # kfold_ascad_atk_with_varying_size(
+    #     100,
+    #     nn,
+    #     subkey_idx=subkey_idx,
+    #     experiment_name=exp_name,
+    #     atk_data=(x_atk, y_atk, k_atk, pt_atk),
+    #     parallelise=parallelise,
+    #     hw=hw
+    # )
 
 
 def weight_evo_experiment_from_params(cline_args, remote=True):
@@ -117,17 +133,6 @@ def single_weight_evo_grid_search_experiment(
     argument tuples.
     """
     print(f"Starting experiment {exp_idx*5 + run_idx}/359...")
-
-    # Load data
-    # subkey_idx = 2
-    # (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
-    #     load_prepared_ascad_vars(
-    #         subkey_idx=subkey_idx, scale=True, use_mlp=True, remote=remote
-    #     )
-    # subkey_idx = 1
-    # (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
-    #     load_chipwhisperer_data(8000, subkey_idx=k_idx, remote=remote, hw=hw)
-    # k_train = k_atk = k
 
     (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
         load_data(dataset_name, hw=hw, remote=remote)
@@ -910,11 +915,15 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
                              select_fn="roulette_wheel", balanced=True,
                              psize=52, gens=25, hw=False, fi=False,
                              metric=MetricType.INCREMENTAL_KEYRANK, n_dense=2,
-                             gen_sgd_train=False, mut_pow=0.04, mut_rate=0.05):
-    (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
-        load_chipwhisperer_data(
-            n_train=8000, subkey_idx=1, remote=remote, hw=hw
-        )
+                             gen_sgd_train=False, mut_pow=0.04, mut_rate=0.05,
+                             noise=False, noise_std=0.03, desync=0):
+    # (x_train, y_train, pt_train, x_atk, y_atk, pt_atk, k) = \
+    #     load_chipwhisperer_data(
+    #         n_train=8000, subkey_idx=1, remote=remote, hw=hw
+    #     )
+    (x_train, y_train, pt_train, k, x_atk, y_atk, pt_atk, k) = \
+        load_data("cw", hw=hw, remote=remote, noise=noise, desync=desync,
+                   noise_std=noise_std)
 
     suffix = "ga" if train_with_ga else "sgd"
     exp_name = gen_experiment_name(psize, ass, select_fn, folds, hw)
@@ -939,9 +948,10 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
         start = time()
 
         # nn = small_mlp_cw(build=True, hw=hw, n_dense=n_dense)
-        # nn = mini_mlp_cw(build=True, hw=hw)
+        nn = mini_mlp_cw(build=True, hw=hw)
+        if desync > 0:
+            nn = cw_desync50(build=True, hw=hw)
         # nn = small_mlp_cw_func(build=True, hw=hw, n_dense=n_dense)
-        nn = tf.keras.models.load_model("neat_genome_keras_nn_test.h5")
         y_train = keras.utils.to_categorical(y_train)
         n_epochs = 50
         batch_size = 50
@@ -955,7 +965,7 @@ def attack_chipwhisperer_mlp(subkey_idx=1, save=False, train_with_ga=True,
         nn.save(f"./trained_models/cw_mlp_trained_{suffix}.h5")
 
     kfold_ascad_atk_with_varying_size(
-        6,
+        30,
         nn,
         subkey_idx=subkey_idx,
         experiment_name=exp_name,
