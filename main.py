@@ -36,12 +36,38 @@ from experiments import (attack_ascad_with_cnn, compute_memory_requirements,
                          weight_evo_results_from_exp_names,
                          eval_best_nn_from_exp_name, train_and_attack_ascad,
                          build_small_mlp_ascad,
-                         train_and_attack_with_multiple_nns)
+                         train_and_attack_with_multiple_nns,
+                         weight_heatmaps_from_exp_name)
 from metrics import MetricType
-from models import build_single_hidden_layer_mlp_ascad, set_nn_load_func
+from models import (build_single_hidden_layer_mlp_ascad, mini_mlp_cw,
+                    set_nn_load_func, train)
 from neat_sca import set_global_data
 from params import *
 from result_processing import combine_grid_search_results
+
+# Encode configurations as (max_gens, hw, avg_pooling, dataset_name, only_evolve_hidden, noise, desync, fs_neat)
+configs = [
+    # AP/HW combinations for full NEAT evolution
+    (250, False, False, "ascad", False, 0, 0, False),
+    (250, False, True,  "ascad", False, 0, 0, False),
+    (250, True,  False, "ascad", False, 0, 0, False),
+    (250, True,  True,  "ascad", False, 0, 0, False),
+    # AP/HW combinations for hidden-only NEAT evolution
+    (250, False, False, "ascad", True, 0, 0, False),
+    (250, False, True,  "ascad", True, 0, 0, False),
+    (250, True,  False, "ascad", True, 0, 0, False),
+    (250, True,  True,  "ascad", True, 0, 0, False),
+    # NEAT vs. CW with countermeasures -> only perform with AP + HW & hidden-only evolution
+    (250, True,  True,  "cw", True, 0.05, 0,   False),
+    (250, True,  True,  "cw", True, 0,    50,  False),
+    (250, True,  True,  "cw", True, 0,    100, False),
+    (250, True,  True,  "cw", True, 0.05, 50,  False),
+    # Full FS-NEAT vs. unprotected CW
+    (1000, True,  True,  "cw", False, 0, 0, True)
+]
+cf = configs[int(sys.argv[1])]
+k_idx = 1 if cf[3] == "cw" else 2
+pool_param = 4 if cf[3] == "cw" else 2
 
 # set_nn_load_func("mini_mlp_cw")
 # set_nn_load_func("mlp_cw", (False, False, 1))
@@ -50,12 +76,14 @@ from result_processing import combine_grid_search_results
 # set_global_data(
 #     "ascad", 3584, subkey_idx=2, n_folds=1, remote=True, hw=bool(int(sys.argv[1])),
 #     metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY, balanced=True,
-#     use_sgd=True, use_avg_pooling=bool(int(sys.argv[2])), seed=77
+#     use_sgd=True, use_avg_pooling=bool(int(sys.argv[2])), seed=77,
+#     pool_param=2
 # )
 set_global_data(
-    "ascad", 3584, subkey_idx=2, n_folds=1, remote=False, hw=True,
+    cf[3], 3584, subkey_idx=k_idx, n_folds=1, remote=False, hw=cf[1],
     metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY, balanced=True,
-    use_sgd=True, use_avg_pooling=True, seed=77
+    use_sgd=True, use_avg_pooling=cf[2], seed=77, pool_param=pool_param,
+    balance_on_hw=False
 )
 
 
@@ -76,8 +104,12 @@ if __name__ == "__main__":
     #      int(sys.argv[1]), int(sys.argv[2]), remote=False, parallelise=True, hw=False, params=custom_params, gens=1000, static_seed=True, randomise_init_weights=True, sgd=False, dataset_name="ascad"
     # )
 
+    cf = configs[int(sys.argv[1])]
+    pool_param = 4 if cf[3] == "cw" else 2
+
     # neat_experiment(pop_size=250, max_gens=100, remote=True, hw=bool(int(sys.argv[1])), parallelise=True, avg_pooling=bool(int(sys.argv[2])), dataset_name="ascad", only_evolve_hidden=True)
-    neat_experiment(pop_size=6, max_gens=100, remote=False, hw=True, parallelise=True, avg_pooling=True, dataset_name="ascad", only_evolve_hidden=True)
+    neat_experiment(pop_size=6, max_gens=cf[0], remote=False, hw=cf[1], parallelise=True, avg_pooling=cf[2], dataset_name=cf[3], only_evolve_hidden=cf[4], noise=cf[5], desync=cf[6], fs_neat=cf[7])
+    # neat_experiment(pop_size=6, max_gens=100, remote=False, hw=True, parallelise=True, avg_pooling=True, dataset_name="cw", only_evolve_hidden=False, fs_neat=True)
 
     # dual_parallel_weight_evo_experiment(sys.argv, remote=False)
     # weight_evo_experiment_from_params(sys.argv, remote=True)
@@ -102,7 +134,7 @@ if __name__ == "__main__":
     # exp_name = "Single hidden layer with SGD (ASCAD)"
     # train_and_attack_with_multiple_nns(nns, hws, labels, "ascad", exp_name)
 
-    # attack_chipwhisperer_mlp(train_with_ga=False, remote=False, hw=True, n_dense=1)
+    # attack_chipwhisperer_mlp(train_with_ga=False, remote=False, hw=True, n_dense=1, noise=False, desync=0, noise_std=0.05, save=True)
 
     # exp_names = ["ps1040-mp0.03-mr0.1-mpdr0.999-fdr0.2-ass315-tsel-tp1.0-mt_CAEN-nofi-balnc-cor0.0-xavwi-nosgd", "ps1040-mp0.03-mr0.1-mpdr0.999-fdr0.2-ass315-tsel-tp1.0-mt_CAEN-nofi-balnc-cor0.5-randwi-sgd"]
     # exp_names = ["ps1040-mp0.03-mr0.1-mpdr0.999-fdr0.2-ass315-tsel-tp1.0-mt_CAEN-nofi-balnc-cor0.5-randwi-sgd"]
@@ -116,3 +148,6 @@ if __name__ == "__main__":
 
     # eval_best_nn_from_exp_name("ps1040-mp0.03-mr0.1-mpdr0.999-fdr0.2-ass3584-tsel-tp1.0-mt_CAEN-nofi-balnc-cor0.5-randwi-nosgd", "ascad", "Final weight evolution NN performance on ASCAD traces")
     # eval_best_nn_from_exp_name("ps1040-mp0.03-mr0.1-mpdr0.999-fdr0.2-ass315-tsel-tp1.0-mt_CAEN-nofi-balnc-cor0.5_same-folds", "cw", "CW pure weight evo.")
+
+    # nn = keras.models.load_model("./trained_models/cw_mlp_trained_sgd.h5")
+    # weight_heatmaps_from_exp_name("cw_hybrid_we", exp_name="ps1040-mp0.03-mr0.1-mpdr0.999-fdr0.2-ass315-tsel-tp1.0-mt_CAEN-nofi-balnc-cor0.5-randwi-sgd")

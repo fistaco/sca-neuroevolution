@@ -211,7 +211,6 @@ def mini_mlp_cw(build=False, hw=True):
         n_output_classes = 256 if not hw else 9
         mlp = keras.Sequential([
             keras.layers.AveragePooling1D(pool_size=4, strides=4, input_shape=(5000,1)),
-            # keras.layers.AveragePooling1D(pool_size=2, strides=2, input_shape=(2500,1)),
             keras.layers.Flatten(),
             keras.layers.Dense(1, activation=tf.nn.selu),
             keras.layers.Dense(n_output_classes, activation=tf.nn.softmax)

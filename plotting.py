@@ -149,8 +149,10 @@ def nn_weights_heatmaps(weightss, exp_label):
     Plots heatmaps for each layer of the given `weights` array, which should be
     formatted according to Keras NN weight formatting.
     """
-    vmin = np.min([np.min(ws) for ws in weightss])
-    vmax = np.max([np.max(ws) for ws in weightss])
+    mean = np.mean([np.mean(ws) for ws in weightss])
+    std = np.std([np.std(ws) for ws in weightss])
+    vmin = mean - 2*std
+    vmax = mean + 2*std
 
     for i in range(0, len(weightss), 2):
         weights = reshape_to_2d_singleton_array(weightss[i])
@@ -164,12 +166,11 @@ def nn_weights_heatmaps(weightss, exp_label):
         )
 
 
-def nn_layer_heatmap(layer, filename, vmin, vmax):
+def nn_layer_heatmap(layer, filename, vmin=-1, vmax=1):
     """
     Plots the heatmap for the given array of weights or biases under the given
     filename.
     """
     sns.heatmap(layer, vmin=vmin, vmax=vmax, xticklabels=False)
-    plt.savefig(f"{filename}.png")
-    # plt.savefig(f"fig/{filename}.png")
+    plt.savefig(f"fig/{filename}.png")
     plt.clf()

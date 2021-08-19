@@ -34,28 +34,29 @@ from models import (build_small_cnn_ascad, train, build_small_mlp_ascad,
 from neat_sca import NeatSca, genome_to_keras_model, draw_genome_nn
 from nn_genome import NeuralNetworkGenome
 from plotting import (plot_gens_vs_fitness, plot_n_traces_vs_key_rank,
-                      plot_var_vs_key_rank, plot_2d, plot_3d)
+                      plot_var_vs_key_rank, plot_2d, plot_3d,
+                      nn_weights_heatmaps)
 from result_processing import ResultCategory, filter_df
 
 
 def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
-                    parallelise=True, avg_pooling=True,
-                    dataset_name="cw", only_evolve_hidden=False, run_idx=-1,
-                    noise=0.0, desync=0):
-    subkey_idx = 2
+                    parallelise=True, avg_pooling=True, pool_param=2,
+                    dataset_name="ascad", only_evolve_hidden=False, run_idx=-1,
+                    noise=0.0, desync=0, fs_neat=False):
+    subkey_idx = commonly_used_subkey_idx(dataset_name)
     (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
         load_data(dataset_name, hw=hw, remote=remote)
 
     exp_name = gen_neat_exp_name(
         pop_size, max_gens, hw, avg_pooling, dataset_name, only_evolve_hidden,
-        fs_neat=False, noise=noise, desync=desync
+        fs_neat=fs_neat, noise=noise, desync=desync
     )
 
     # Train with NEAT
     neatsca = NeatSca(
         pop_size, max_gens, remote=remote, parallelise=parallelise,
         only_evolve_hidden=only_evolve_hidden,
-        config_filepath=f"./neat-config-{dataset_name}"
+        config_filepath=f"./neat-config-{dataset_name}", fs_neat=fs_neat
     )
     (best_indiv, config) = neatsca.run(x_train, y_train, pt_train, k_train, hw)
 
@@ -67,7 +68,9 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
             pickle.dump((best_fitness_per_gen, top_ten), f)
 
     print("Commencing training of best network.")
-    nn = genome_to_keras_model(best_indiv, config, use_avg_pooling=avg_pooling)
+    nn = genome_to_keras_model(
+        best_indiv, config, use_avg_pooling=avg_pooling, pool_param=4
+    )
     nn = train(nn, x_train, y_train)
 
     print("Commencing evaluation on attack set.")
@@ -79,9 +82,13 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
 
     # Save results in the proper experiment directory if run_idx is specified
     if run_idx >= 0:
-        filepath = f"neat_results/{exp_name}/run{run_idx}_results.pickle"
+        dir_path = f"neat_results/{exp_name}"
+        if not os.path.exists(dir_path):
+            os.mkdir(dir_path)
+
+        filepath = f"{dir_path}/run{run_idx}_results.pickle"
         results = (
-            best_indiv, config, best_fitness_per_gen, top_ten, inc_kr, mean_krs
+            best_indiv, config, best_fitness_per_gen, top_ten, mean_krs, inc_kr
         )
 
         with open(filepath, "wb") as f:
@@ -286,28 +293,11 @@ def weight_evo_results_from_exp_names(exp_names, exp_labels, file_tag,
 def eval_best_nn_from_exp_name(exp_name, dataset_name, exp_label, k_idx=1,
                                hw=True):
     """
-    Obtain the average key rank of the given `exp_name`'s best resulting NN on
+    Obtains the average key rank of the given `exp_name`'s best resulting NN on
     the designated data set over 100 folds and stores the result.
     """
-    n_repeats = 5
-    dir_path = f"res/{exp_name}"
-
-    # Find the best run and load the corresponding results
-    best_inc_kr = 3.0
-    best_results = None
-    for i in range(n_repeats):
-        # Load results
-        filepath = f"{dir_path}/run{i}_results.pickle"
-        results = None
-        with open(filepath, "rb") as f:
-            results = pickle.load(f)
-        (_, _, _, _, inc_kr) = results
-
-        if inc_kr < best_inc_kr:
-            best_inc_kr = inc_kr
-            best_results = results
-
-    (best_indiv, best_fitness_per_gen, top_ten, fit, inc_kr) = best_results
+    best_results = best_results_from_exp_name(exp_name)
+    best_indiv = best_results[0]
 
     nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
     nn.set_weights(best_indiv.weights)
@@ -323,6 +313,44 @@ def eval_best_nn_from_exp_name(exp_name, dataset_name, exp_label, k_idx=1,
         parallelise=True,
         hw=hw
     )
+
+
+def weight_heatmaps_from_exp_name(exp_label, exp_name=None, weights=None):
+    """
+    Plots heatmaps for each layer of the weights of the best individual
+    obtained with the experiments from the given `exp_name`.
+
+    Alternatively, a custom `weights` array may be supplied.
+    """
+    if weights is None:
+        weights = best_results_from_exp_name(exp_name)[0].weights
+
+    nn_weights_heatmaps(weights, exp_label)
+
+
+def best_results_from_exp_name(exp_name):
+    """
+    Obtains the best tuple of results over all runs for the given `exp_name.
+    """
+    n_repeats = 5
+    dir_path = f"res/{exp_name}"
+
+    # Find the best run and load the corresponding results
+    best_inc_kr = 3.0
+    best_results = None
+    for i in range(n_repeats):
+        # Load results
+        filepath = f"{dir_path}/run{i}_results.pickle"
+        results = None
+        with open(filepath, "rb") as f:
+            results = pickle.load(f)
+        inc_kr = results[-1]
+
+        if inc_kr < best_inc_kr:
+            best_inc_kr = inc_kr
+            best_results = results
+
+    return best_results
 
 
 def ga_grid_search_find_best_network():
