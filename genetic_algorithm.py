@@ -133,9 +133,9 @@ class GeneticAlgorithm:
             print(f"Best fitness in generation {gen}: {best_fitness}")
 
             # Quit if we're hardly making progress
-            if gen > 100 and \
-                ga_stagnation(self.best_fitness_per_gen, gen, 50, 0.02):
-                break
+            # if gen > 100 and \
+            #     ga_stagnation(self.best_fitness_per_gen, gen, 50, 0.02):
+            #     break
 
             self.mut_power *= self.mut_power_decay_rate
             gen += 1
@@ -157,12 +157,17 @@ class GeneticAlgorithm:
         Initialises a population of NNs with the given architecture parameters.
         """
         weights = nn.get_weights()
+
+        if not randomise_weights:
+            weights[0] *= 14
+
         for i in range(len(self.population)):
             self.population[i] = NeuralNetworkGenome(
                 weights, self.max_fitness, i
             )
             if randomise_weights:
                 self.population[i].random_weight_init()
+
 
     def evaluate_fitness(self, x_atk, y_atk, pt_atk, true_subkey, subkey_idx,
                          seed, shuffle=True, balanced=True, hw=False):
@@ -263,7 +268,7 @@ class GeneticAlgorithm:
     def tournament_selection(self, replace=False):
         """
         Selects potentially strong individuals by performing fitness-based
-        tournaments with replacement.
+        tournaments.
         """
         # Potentially use a truncated population with the best fitnesses
         trunc_size = round(self.truncation_proportion*self.full_pop_size)
