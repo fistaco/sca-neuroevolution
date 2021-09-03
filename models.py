@@ -1,11 +1,9 @@
 import tensorflow as tf
 from tensorflow import keras
+from keras import Input, Model
+from keras.layers import AveragePooling1D, Dense, Flatten, Concatenate
 from tensorflow.keras import activations
 from tensorflow.python.keras.engine import input_layer
-from tensorflow.python.keras.engine.input_layer import Input
-from tensorflow.python.keras.layers.core import Flatten
-from tensorflow.python.ops.control_flow_ops import group
-from tensorflow.python.ops.gen_array_ops import split
 import numpy as np
 
 from helpers import (load_model_weights_from_ga_results,
@@ -131,12 +129,156 @@ def build_single_hidden_layer_mlp_ascad(hw=False, avg_pooling=True):
         x = Flatten()(x)
     else:
         x = Flatten()(inputs)
-    
 
     x = keras.layers.Dense(10, activation=tf.nn.selu)(x)
     x = keras.layers.Dense((9 if hw else 256), activation=tf.nn.softmax)(x)
 
     return keras.Model(inputs, x)
+
+
+def ideal_ascad_neat_mlp(hw=False, avg_pooling=True, n_snd_layer_nodes=10):
+    """
+    Constructs an MLP that resembles the known architecture by Zaid et al. and
+    could theoretically be reached through NEAT evolution.
+
+    This "ideal" model is constructed by starting with a single layer of 10
+    hidden nodes. It is then expanded by constructing 10 hidden nodes along
+    output connections, connecting the first hidden layer to the newly created
+    one, and finally connecting the second hidden layer to the output nodes.
+    For the ID model, this would take at least 10 + (10*10) + (10*256) = 2670
+    generations without crossover.
+    """
+    n_outputs = (9 if hw else 256)
+
+    inputs = keras.Input(shape=(700, 1))
+
+    if avg_pooling:
+        x = keras.layers.AveragePooling1D(pool_size=2, strides=2)(inputs)
+        x = Flatten()(x)
+    else:
+        x = Flatten()(inputs)
+
+    x = keras.layers.Dense(10, activation=tf.nn.selu)(x)
+    x = keras.layers.Dense(n_outputs, activation=tf.nn.softmax)(x)
+
+    return keras.Model(inputs, x)
+
+
+def random_ascad_neat_mlp(hw=False, avg_pooling=True, gens=100):
+    """
+    Constructs an MLP that could be obtained through NEAT after a given number
+    of generations by inserting `gens` random nodes between the initial hidden
+    layer and output layer, as well as and `gens`*0.8 random connections
+    between the initial hidden layer and the newly added nodes.
+    """
+    n_outputs = (9 if hw else 256)
+
+    inputs = keras.Input(shape=(700, 1))
+
+    if avg_pooling:
+        x = AveragePooling1D(pool_size=2, strides=2)(inputs)
+        x = Flatten()(x)
+    else:
+        x = Flatten()(inputs)
+
+    # Construct 10 initial hidden layer nodes
+    n_hidden = 10 + gens
+    n_nodes = n_hidden + n_outputs
+    hidden_nodes = np.empty(n_hidden, dtype=object)
+    for i in range(10):
+        hidden_nodes[i] = Dense(1, activation=tf.nn.selu, name=f"init_{i}")(x)
+
+    new_node_idxs = np.arange(10, gens + 10)
+    output_idxs = np.arange(n_hidden, n_hidden + n_outputs)
+
+    # Determine new connections logically, but don't construct new nodes yet
+    connected = np.full((n_hidden, n_nodes), fill_value=False, dtype=bool)
+    # Connect to new hidden nodes
+    for i in range(int(0.8*gens)):
+        start_node = np.random.choice(10)
+        end_node = np.random.choice(new_node_idxs)
+
+        # Guarantee that a connection is added
+        while connected[start_node, end_node]:
+            start_node = np.random.choice(10)
+            end_node = np.random.choice(new_node_idxs)
+
+        connected[start_node, end_node] = True
+
+    # Connect initial layer to output nodes
+    for i in range(10):
+        for j in output_idxs:
+            connected[i, j] = True
+
+    # Determine in between which output connections the new nodes will be
+    new_node_conn_idxs = np.random.choice(10*n_outputs, gens)
+
+    # Construct new nodes and connect to them through existing nodes
+    n_nodes_added = 0
+    for i in range(10):
+        for j in range(n_outputs):
+            o = output_idxs[j]
+            conn_idx = i*n_outputs + j
+
+            # Handle new node additions & corresponding connection changes
+            if conn_idx in new_node_conn_idxs:
+                node_i = new_node_idxs[n_nodes_added]
+                # Interrupt the existing connection to add a node
+                connected[i, o] = False
+                if connected[i, node_i]:
+                    print(f"Connection ({i}, {node_i}) already exists when adding a new node")
+                connected[i, node_i] = True
+                connected[node_i, o] = True
+
+                incoming = [
+                    hidden_nodes[n] for n in range(n_hidden)
+                    if connected[n, node_i]
+                ]
+
+                name = f"new_hid_{n_nodes_added}"
+                if len(incoming) == 1:
+                    hidden_nodes[node_i] = \
+                        Dense(1, tf.nn.selu, name=name)(incoming[0])
+                else:
+                    concat_inc = Concatenate(name=f"ccat_{name}")(incoming)
+                    hidden_nodes[node_i] = \
+                        Dense(1, tf.nn.selu, name=name)(concat_inc)
+
+                n_nodes_added += 1
+    
+    outputs = []
+    for o in output_idxs:
+        incoming = [
+            hidden_nodes[n] for n in range(n_hidden) if connected[n, o]
+        ]
+        concat_inc = Concatenate()(incoming)
+
+        outputs.append(Dense(1, "linear", name=f"output_{o}")(concat_inc))
+    final_output_layer = keras.layers.Softmax()(Concatenate()(outputs))
+
+    return Model(inputs, final_output_layer)
+
+
+def build_variable_small_mlp_ascad(hw=False, avg_pooling=False, n_layers=1,
+                                   n_layer_nodes=10):
+    """
+    Builds and returns an MLP for the ASCAD data set according to the given
+    hyperparameters.
+    """
+    inputs = keras.Input((700, 1))
+
+    if avg_pooling:
+        x = AveragePooling1D(pool_size=2, strides=2)(inputs)
+        x = Flatten()(x)
+    else:
+        x = Flatten()(inputs)
+
+    for _ in range(n_layers):
+        x = Dense(n_layer_nodes, activation=tf.nn.selu)(x)
+
+    x = Dense((9 if hw else 256), activation=tf.nn.softmax)(x)
+
+    return Model(inputs, x)
 
 
 def small_mlp_cw(build=False, hw=False, n_dense=2):

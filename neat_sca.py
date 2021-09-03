@@ -29,7 +29,7 @@ num_folds = 1
 class NeatSca:
     def __init__(self, pop_size, max_gens, config_filepath="./neat-config",
                  remote=False, parallelise=True, only_evolve_hidden=False,
-                 fs_neat=False):
+                 fs_neat=False, comp_thresh=None, tselect=False):
         global x, g_hw, avg_pooling, pool_size
 
         self.pop_size = pop_size
@@ -50,10 +50,23 @@ class NeatSca:
         self.config.genome_config.output_keys = list(range(n_outputs))
         self.config.genome_config.initial_connection = "full_nodirect" \
             if not fs_neat else "fs_neat_hidden"
-        comp_thresh = 0.53 if g_hw else 0.04
+
+        if comp_thresh is None:
+            n_hidden = self.config.genome_config.num_hidden
+            n_nodes = n_hidden + n_outputs
+            n_conns = n_inputs*n_hidden + n_hidden*n_outputs
+            if fs_neat:
+                n_conns = n_hidden + n_outputs
+
+            # Max. 2 nodes and 3 conns are added to a genome each generation
+            comp_thresh = 5*(2/n_nodes + 3/n_conns)
+        # comp_thresh = 0.53 if g_hw else 0.04
         self.config.species_set_config.compatibility_threshold = comp_thresh
 
-        self.population = neat.Population(self.config)
+        self.population = neat.Population(self.config, tourn_select=tselect)
+        # with open("most_recent_neat_genome.pickle", "wb") as f:
+        #     pickle.dump(self.population.population[1], f)
+        # exit()
         self.population.add_reporter(neat.StdOutReporter(False))
         self.stats = neat.StatisticsReporter()
         self.population.add_reporter(self.stats)
@@ -267,6 +280,28 @@ def genome_to_keras_model(genome, config, use_genome_params=False,
     final_output_layer = keras.layers.Softmax()(final_output_layer)
 
     return keras.Model(inputs, final_output_layer)
+
+
+def construct_neat_config(input_size, hw, config_filepath, only_evolve_hidden,
+                          pool_size=1):
+    """
+    Constructs a `Config` object compatible with the NEAT-Python module for
+    usage with the `genome_to_keras_model` function.
+    """
+    n_inputs = input_size//pool_size
+    n_outputs = 9 if hw else 256
+
+    config = neat.Config(
+        neat.DefaultGenome, neat.DefaultReproduction,
+        neat.DefaultSpeciesSet, neat.DefaultStagnation, config_filepath,
+        only_evolve_hidden
+    )
+    config.genome_config.num_inputs = n_inputs
+    config.genome_config.input_keys = [-i-1 for i in range(n_inputs)]
+    config.genome_config.num_outputs = n_outputs
+    config.genome_config.output_keys = list(range(n_outputs))
+
+    return config
 
 
 def draw_genome_nn(genome, label="", only_draw_hidden=True, n_outputs=256):
