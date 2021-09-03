@@ -459,7 +459,7 @@ def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor,
 
 
 def gen_neat_exp_name(pop_size, gens, hw, pool, data_name, hidden_only,
-                      fs_neat=False, noise=0.0, desync=0):
+                      noise=0.0, desync=0, fs_neat=False):
     """
     Generates an experiment name for a NEAT run using the given arguments.
     """
@@ -679,16 +679,14 @@ def is_categorical(labels):
 
 def reshape_to_2d_singleton_array(xs):
     """
-    Reshapes a given 1- or 2-dimensional array to a 2D array of the same size,
-    but with each element being a singleton array.
+    Reshapes `xs` to a singleton array if it's 1-dimensional.
 
     This method is meant to be used to present NN layer information in a
     uniform format.
     """
     assert len(xs.shape) <= 2
 
-    if len(xs.shape) == 1 or xs.shape[1] > 1:
-        size = max(xs.shape)
-        return np.reshape(xs, (size, 1))
+    if len(xs.shape) == 1:
+        return np.reshape(xs, (len(xs), 1))
 
     return xs

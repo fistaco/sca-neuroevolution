@@ -46,18 +46,18 @@ def plot_gens_vs_fitness(experiment_name, *fit_progress_lists, labels=None):
 
 def plot_n_traces_vs_key_rank(exp_name, *key_rankss, labels=None):
     """
-    Constructs and saves a plot with the amount of traces on the x-axis and the
+    Constructs and saves a plot with the number of traces on the x-axis and the
     (mean) key rank on the y-axis.
 
     Arguments:
         experiment_name: The name of the results' corresponding experiment.
 
         key_rankss: A list in which each item is a numpy array containing the
-        (mean) key rank for each trace amount.
+        (mean) key rank for each trace number.
 
         labels: A list of labels corresponding to the lists of key ranks.
     """
-    plt.title(f"Amount of traces ~ key rank ({exp_name})")
+    plt.title(f"Number of traces ~ key rank ({exp_name})")
     plt.xlabel("Traces")
     plt.ylabel("Key rank")
     
@@ -149,20 +149,26 @@ def nn_weights_heatmaps(weightss, exp_label):
     Plots heatmaps for each layer of the given `weights` array, which should be
     formatted according to Keras NN weight formatting.
     """
-    mean = np.mean([np.mean(ws) for ws in weightss])
-    std = np.std([np.std(ws) for ws in weightss])
-    vmin = mean - 2*std
-    vmax = mean + 2*std
+    print(f"Layer statistics for {exp_label}:")
 
     for i in range(0, len(weightss), 2):
         weights = reshape_to_2d_singleton_array(weightss[i])
         biases = reshape_to_2d_singleton_array(weightss[i + 1])   
 
+        mean_w, std_w = np.mean(weights), np.std(weights)
+        print(f"Layer {i//2} weights mean = {mean_w}, std = {std_w}, " + \
+              f"min = {np.min(weights)}, max = {np.max(weights)}")
+
+        vmin_w = mean_w - 2*std_w
+        vmax_w = mean_w + 2*std_w
+        vmin_b = np.mean(biases) - 2*np.std(biases)
+        vmax_b = np.mean(biases) + 2*np.std(biases)
+
         nn_layer_heatmap(
-            weights, f"{exp_label}_heatmap_weights_{i//2}", vmin, vmax
+            weights, f"{exp_label}_heatmap_weights_{i//2}", vmin_w, vmax_w
         )
         nn_layer_heatmap(
-            biases, f"{exp_label}_heatmap_biases_{i//2}", vmin, vmax
+            biases, f"{exp_label}_heatmap_biases_{i//2}", vmin_b, vmax_b
         )
 
 

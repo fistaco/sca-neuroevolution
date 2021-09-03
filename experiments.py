@@ -40,23 +40,25 @@ from result_processing import ResultCategory, filter_df
 
 
 def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
-                    parallelise=True, avg_pooling=True, pool_param=2,
-                    dataset_name="ascad", only_evolve_hidden=False, run_idx=-1,
-                    noise=0.0, desync=0, fs_neat=False):
+                    parallelise=True, avg_pooling=True, pool_param=1,
+                    dataset_name="ascad", only_evolve_hidden=False, noise=0.0,
+                    desync=0, fs_neat=False, run_idx=-1, n_atk_folds=100,
+                    comp_thresh=None, tselect=False):
     subkey_idx = commonly_used_subkey_idx(dataset_name)
     (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
         load_data(dataset_name, hw=hw, remote=remote)
 
     exp_name = gen_neat_exp_name(
         pop_size, max_gens, hw, avg_pooling, dataset_name, only_evolve_hidden,
-        fs_neat=fs_neat, noise=noise, desync=desync
+        noise=noise, desync=desync, fs_neat=fs_neat
     )
 
     # Train with NEAT
     neatsca = NeatSca(
         pop_size, max_gens, remote=remote, parallelise=parallelise,
         only_evolve_hidden=only_evolve_hidden,
-        config_filepath=f"./neat-config-{dataset_name}", fs_neat=fs_neat
+        config_filepath=f"./neat-config-{dataset_name}", fs_neat=fs_neat,
+        comp_thresh=comp_thresh, tselect=tselect
     )
     (best_indiv, config) = neatsca.run(x_train, y_train, pt_train, k_train, hw)
 
@@ -69,14 +71,14 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
 
     print("Commencing training of best network.")
     nn = genome_to_keras_model(
-        best_indiv, config, use_avg_pooling=avg_pooling, pool_param=4
+        best_indiv, config, use_avg_pooling=avg_pooling, pool_param=pool_param
     )
     nn = train(nn, x_train, y_train)
 
     print("Commencing evaluation on attack set.")
     y_pred_probs = nn.predict(x_atk)
     (inc_kr, mean_krs) = kfold_mean_inc_kr(
-        y_pred_probs, pt_atk, y_atk, k_atk, 100, subkey_idx, remote,
+        y_pred_probs, pt_atk, y_atk, k_atk, n_atk_folds, subkey_idx, remote,
         parallelise=parallelise, hw=hw, return_krs=True
     )
 
@@ -351,6 +353,32 @@ def best_results_from_exp_name(exp_name):
             best_results = results
 
     return best_results
+
+
+def nns_from_exp_name(exp_name):
+    """
+    Returns an array of NNs where the NNs' respective weights are taken from
+    the results of all experiments with the given experiment name. The returned
+    array is sorted ascendingly by the NNs' incremental key rank values.
+    """
+    n_repeats = 5
+    dir_path = f"res/{exp_name}"
+
+    # Iterate over all experiment results and construct the corresponding NNs
+    nns = []
+    for i in range(n_repeats):
+        # Load results
+        filepath = f"{dir_path}/run{i}_results.pickle"
+        results = None
+        with open(filepath, "rb") as f:
+            results = pickle.load(f)
+
+        nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
+        nn.set_weights(results[0].weights)
+        nns.append((nn, results[-1]))
+
+    sorted_nns = sorted(nns, key=lambda tup: tup[1])
+    return [tup[0] for tup in sorted_nns]
 
 
 def ga_grid_search_find_best_network():
@@ -759,8 +787,35 @@ def single_ensemble_experiment():
     )
 
 
+def ensemble_attack_from_exp_name(exp_name, dataset_name, exp_label, hw=True,
+                                  intra_exp=False):
+    """
+    Performs a bagging ensemble attack on the desired dataset with NNs using
+    weights from experiments with the given experiment name. The results are
+    saved with a filename incorporating the given `exp_label`.
+
+    If `intra_exp` is set to `True`, the NNs will be taken from the top 5 NNs
+    resulting from the best experiment with the given experiment name.
+    """
+    k_idx = commonly_used_subkey_idx(dataset_name)
+    (_, _, _, _, x_atk, y_atk, pt_atk, k_atk) = \
+        load_data(dataset_name, hw=hw, remote=False)
+
+    if intra_exp:
+        top_five_indivs = best_results_from_exp_name(exp_name)[2][:5]
+        nns = []
+        for i in range(5):
+            nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
+            nn.set_weights(top_five_indivs[i].weights)
+            nns.append(nn)
+    else:
+        nns = nns_from_exp_name(exp_name)
+
+    ensemble_model_sca(nns, 100, x_atk, y_atk, k_atk, pt_atk, k_idx, exp_label)
+
+
 def ensemble_model_sca(nns, n_folds, x_atk, y_atk, true_subkey, ptexts,
-                       subkey_idx=2, experiment_name="ensemble_test"):
+                       subkey_idx=1, experiment_name="ensemble_test", hw=True):
     """
     Evaluates an ensemble of the given top performing neural networks on the
     given attack set over several folds. This is accomplished by using the
@@ -772,8 +827,9 @@ def ensemble_model_sca(nns, n_folds, x_atk, y_atk, true_subkey, ptexts,
     key_rankss = np.empty(len(nn_indices) + 1, dtype=object)  # [[key_rank]]
     for (i, nn_idx) in enumerate(nn_indices):
         key_rankss[i] = kfold_ascad_atk_with_varying_size(
-            n_folds, nns[nn_idx], atk_data=(x_atk, y_atk, true_subkey, ptexts),
-            parallelise=True
+            n_folds, nns[nn_idx], subkey_idx=subkey_idx,
+            atk_data=(x_atk, y_atk, true_subkey, ptexts), parallelise=True,
+            hw=hw
         )
 
     print("Commencing ensemble attack.")
@@ -781,7 +837,7 @@ def ensemble_model_sca(nns, n_folds, x_atk, y_atk, true_subkey, ptexts,
     bagged_pred_probs = sum([nn.predict(x_atk) for nn in nns])
     ensemble_key_ranks = kfold_mean_key_ranks(
         bagged_pred_probs, ptexts, true_subkey, n_folds, subkey_idx,
-        experiment_name, parallelise=True
+        experiment_name, parallelise=True, hw=hw
     )
     key_rankss[-1] = ensemble_key_ranks
 
@@ -1234,6 +1290,54 @@ def test_inc_kr_fold_consistency(nn_quality="medium"):
     plot_2d(fold_amnts, ys, "Folds", "Std. dev.",
             f"Folds ~ fitness standard deviation ({m.name})"
     )
+
+
+def infoneat_reproducability_test(remote=False):
+    """
+    Runs NEAT SCA with the parameters used in the InfoNEAT paper by Acharya et
+    al., reproducing as much as is known about the experiment with the
+    exception of the fitness function, which is the categorical cross-entropy.
+    """
+    # Reproduction steps:
+    # Parameters: population size 16, max. 30 generations, ID model, no average
+    #   pooling, compatibility threshold 1.8, batch size 150
+    # Activation function: Leaky ReLU -> TODO: Implement if necessary.
+    # Weight initialization: Xavier with min/max +/- 6.18, mean 0, variance 1
+    # Selection: discard networks that don't improve after mutation -> Implemented tselect, but
+    #            need CMI to discard non-improving networks
+    # Questions:
+    #   - What alpha is being used for LeakyReLU? I can't make it work as well as selu with alpha=0.01.
+    #   - Xavier weight init has weights in range +- sqrt(6)/sqrt(700 + 10) = +- 0.1 for ASCAD hid. layer 1,
+    #     so what's with these initialisation ranges? -> Xavier weight init has min/max +/- 0.15.
+    #   - Is weight evolution also being used or not? Compatibility distance seems too large otherwise. -> TODO: Reread InfoNEAT paper.
+    #   - How many training traces are being used?
+    #   - What selection method is being used? And what is Russian roulette selection?
+    #       - Russian roulette selection: (Genetic Algorithm Attributes for Component Selection, Susan E. Carlson)
+    #           Order pop by fitness, worst first
+    #           -> for each indiv, toss a coin with probability 0.88 of staying in the population
+    #           -> Continue until a member is removed
+    #   - How many species did you get with your setup?
+    #   - How many folds did you use for evaluation of NEAT without stacking and cross-validation? The line looks choppy.
+    #   - (Just for me:) Why does CCE sometimes go up despite the fact that elitism is enabled?
+    neat_experiment(
+        pop_size=16, max_gens=30, remote=remote, hw=False, parallelise=True,
+        avg_pooling=False, pool_param=1, dataset_name="ascad",
+        only_evolve_hidden=False, noise=0.0, desync=0, fs_neat=False,
+        n_atk_folds=5, comp_thresh=1.8, tselect=True
+    )
+
+
+def construct_neat_dirs(argss):
+    """
+    Constructs a directory for the experiment names corresponding to the given
+    NEAT argument lists.
+    """
+    for args in argss:
+        exp_name = gen_neat_exp_name(*args)
+        dir_path = f"neat_results/{exp_name}"
+
+        if not os.path.exists(dir_path):
+            os.mkdir(dir_path)
 
 
 def compute_memory_requirements(pop_sizes, atk_set_sizes):
