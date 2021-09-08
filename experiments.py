@@ -14,7 +14,7 @@ from data_processing import (load_ascad_atk_variables, load_ascad_data,
                              load_prepared_ascad_vars, sample_data,
                              scale_inputs, shuffle_data, balanced_sample,
                              load_chipwhisperer_data, load_data,
-                             commonly_used_subkey_idx)
+                             commonly_used_subkey_idx, sample_traces)
 from genetic_algorithm import (GeneticAlgorithm, evaluate_fitness,
                                train_nn_with_ga)
 from helpers import (compute_fold_keyranks, compute_mem_req,
@@ -30,7 +30,9 @@ from models import (build_small_cnn_ascad, train, build_small_mlp_ascad,
                     build_small_mlp_ascad_trainable_first_layer,
                     cw_desync50, load_small_cnn_ascad,
                     load_small_cnn_ascad_no_batch_norm, load_small_mlp_ascad,
-                    small_mlp_cw, mini_mlp_cw, small_mlp_cw_func, train, build_single_hidden_layer_mlp_ascad)
+                    small_mlp_cw, mini_mlp_cw, small_mlp_cw_func, train,
+                    build_single_hidden_layer_mlp_ascad, random_ascad_neat_mlp,
+                    build_variable_small_mlp_ascad)
 from neat_sca import NeatSca, genome_to_keras_model, draw_genome_nn
 from nn_genome import NeuralNetworkGenome
 from plotting import (plot_gens_vs_fitness, plot_n_traces_vs_key_rank,
@@ -90,7 +92,7 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
 
         filepath = f"{dir_path}/run{run_idx}_results.pickle"
         results = (
-            best_indiv, config, best_fitness_per_gen, top_ten, mean_krs, inc_kr
+            best_indiv, best_fitness_per_gen, config, top_ten, mean_krs, inc_kr
         )
 
         with open(filepath, "wb") as f:
@@ -253,13 +255,15 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
             pickle.dump(results, f)
 
 
-def weight_evo_results_from_exp_names(exp_names, exp_labels, file_tag,
-                                      separate_fit_prog_plots=False):
+def results_from_exp_names(exp_names, exp_labels, file_tag, neat=False):
     """
     Generates a fitness progress plot and key rank progress plot for one or
     more weight evolution experiments with the given parameters. This method
     assumes the result files are already present in their respective
     directories.
+
+    This method processes weight evolution results by default, but can also
+    process NEAT results if the `neat` argument is set to True.
     """
     n_repeats = 5
     fit_progress_arrays = []
@@ -275,7 +279,10 @@ def weight_evo_results_from_exp_names(exp_names, exp_labels, file_tag,
             results = None
             with open(filepath, "rb") as f:
                 results = pickle.load(f)
-            (best_indiv, best_fitness_per_gen, top_ten, fit, inc_kr) = results
+            best_fitness_per_gen, inc_kr = results[1], results[-1]
+            if neat:
+                # Recall our NEAT implementation only uses fitness maximisation
+                best_fitness_per_gen = -np.array(best_fitness_per_gen)
 
             inc_krs.append(inc_kr)
 
@@ -1318,6 +1325,7 @@ def infoneat_reproducability_test(remote=False):
     #           -> Continue until a member is removed
     #   - How many species did you get with your setup?
     #   - How many folds did you use for evaluation of NEAT without stacking and cross-validation? The line looks choppy.
+    #   - What learning rate and optimizer do you use for training with SGD?
     #   - (Just for me:) Why does CCE sometimes go up despite the fact that elitism is enabled?
     neat_experiment(
         pop_size=16, max_gens=30, remote=remote, hw=False, parallelise=True,
@@ -1325,6 +1333,92 @@ def infoneat_reproducability_test(remote=False):
         only_evolve_hidden=False, noise=0.0, desync=0, fs_neat=False,
         n_atk_folds=5, comp_thresh=1.8, tselect=True
     )
+
+
+def neat_cce_progress_analysis():
+    """
+    Determines the optimal number of traces and training epochs for NEAT
+    by training better NNs with several combinations of n_traces and n_epochs
+    and observing the resulting differences in categorical cross-entropy (CCE)
+    when compared to an unevolved network.
+
+    A larger difference is assumed to be better, because larger differences
+    help us to differentiate stronger NNs from weaker ones.
+    """
+    n_tracess = [256*i for i in [15, 45, 75, 105, 135]]
+    max_n_epochs = 50
+    nn_labels = ["100 Mutations", "250 Mutations", "2×10 Hidden nodes",
+                 "2×15 Hidden nodes"]
+
+    # Track CCE difference for each combination of NN, n_traces and n_epochs
+    cce_diffs_shape = (len(nn_labels), len(n_tracess), max_n_epochs)
+    cce_diffs = np.zeros(cce_diffs_shape, dtype=float)
+
+    print("CCE diffs for each NN at different numbers of traces/epochs:\n====")
+    for (i, n_traces) in enumerate(n_tracess):
+        np.random.seed(77)
+        tf.random.set_seed(77)
+
+        (x_train, y_train, pt_train, _, _, _, _, _) = \
+            load_data("ascad", hw=False, remote=False)
+        x_train, y_train, _ = sample_traces(
+            n_traces, x_train, y_train, pt_train, 256, balanced=True)
+        y_cat = keras.utils.to_categorical(y_train)
+
+        # Reconstruct NNs for every trace amount
+        init_nn = build_variable_small_mlp_ascad(n_layers=1, n_layer_nodes=10)
+        better_nns = [
+            # NNs that could have arisen after 100, resp. 250 NEAT mutations
+            random_ascad_neat_mlp(gens=100),
+            random_ascad_neat_mlp(gens=250),
+            # NNs based on the one proposed by Zaid et al.
+            build_variable_small_mlp_ascad(n_layers=2, n_layer_nodes=10),
+            build_variable_small_mlp_ascad(n_layers=2, n_layer_nodes=15)
+        ]
+
+        # Train the unevolved NN
+        optimizer = keras.optimizers.Adam(learning_rate=5e-3)
+        loss_fn = keras.losses.CategoricalCrossentropy()
+        init_nn.compile(optimizer, loss_fn)
+        history = init_nn.fit(x_train, y_cat, batch_size=100,
+                              epochs=max_n_epochs, verbose=0)
+        init_nn_cces = np.array(history.history["loss"], dtype=float)
+
+        # Train the better NNs and compare CCE scores
+        for (j, nn) in enumerate(better_nns):
+            optimizer = keras.optimizers.Adam(learning_rate=5e-3)
+            loss_fn = keras.losses.CategoricalCrossentropy()
+            nn.compile(optimizer, loss_fn)
+            history = nn.fit(x_train, y_cat, batch_size=100,
+                             epochs=max_n_epochs, verbose=0)
+            nn_cces = np.array(history.history["loss"], dtype=float)
+            nn_cce_diffs = nn_cces - init_nn_cces
+
+            cce_diffs[j, i, :] = nn_cce_diffs
+
+            # Print progress
+            cce10 = round(nn_cce_diffs[9], 4)
+            cce50 = round(nn_cce_diffs[49], 4)
+            l = nn_labels[j]
+            print(f"{l} NN, {n_traces} traces: {cce10} @ 10, {cce50} @ 50")
+
+    with open("evolved_nn_cce_diffs.pickle", "wb") as f:
+        pickle.dump(cce_diffs, f)
+
+    # Plot results separately for each NN
+    for (i, nn_label) in enumerate(nn_labels):
+        # Construct the resulting 2D array, storing the CCE diff for each combo
+        epoch_list = np.arange(4, 50, 5)  # Only plot CCE diffs at these epochs
+        zs = np.zeros((len(n_tracess),  len(epoch_list)), dtype=float)
+        for j in range(len(n_tracess)):
+            for (k, ep) in enumerate(epoch_list):
+                zs[j, k] = cce_diffs[i, j, ep]
+
+        plot_3d(
+            epoch_list, n_tracess, zs,
+            "Epochs", "Traces", "CCE diff.",
+            f"Epochs & traces ~ CCE diff. from unevolved NN ({nn_label})"
+        )
 
 
 def construct_neat_dirs(argss):
