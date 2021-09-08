@@ -136,35 +136,7 @@ def build_single_hidden_layer_mlp_ascad(hw=False, avg_pooling=True):
     return keras.Model(inputs, x)
 
 
-def ideal_ascad_neat_mlp(hw=False, avg_pooling=True, n_snd_layer_nodes=10):
-    """
-    Constructs an MLP that resembles the known architecture by Zaid et al. and
-    could theoretically be reached through NEAT evolution.
-
-    This "ideal" model is constructed by starting with a single layer of 10
-    hidden nodes. It is then expanded by constructing 10 hidden nodes along
-    output connections, connecting the first hidden layer to the newly created
-    one, and finally connecting the second hidden layer to the output nodes.
-    For the ID model, this would take at least 10 + (10*10) + (10*256) = 2670
-    generations without crossover.
-    """
-    n_outputs = (9 if hw else 256)
-
-    inputs = keras.Input(shape=(700, 1))
-
-    if avg_pooling:
-        x = keras.layers.AveragePooling1D(pool_size=2, strides=2)(inputs)
-        x = Flatten()(x)
-    else:
-        x = Flatten()(inputs)
-
-    x = keras.layers.Dense(10, activation=tf.nn.selu)(x)
-    x = keras.layers.Dense(n_outputs, activation=tf.nn.softmax)(x)
-
-    return keras.Model(inputs, x)
-
-
-def random_ascad_neat_mlp(hw=False, avg_pooling=True, gens=100):
+def random_ascad_neat_mlp(hw=False, avg_pooling=False, gens=100):
     """
     Constructs an MLP that could be obtained through NEAT after a given number
     of generations by inserting `gens` random nodes between the initial hidden
@@ -225,8 +197,8 @@ def random_ascad_neat_mlp(hw=False, avg_pooling=True, gens=100):
                 node_i = new_node_idxs[n_nodes_added]
                 # Interrupt the existing connection to add a node
                 connected[i, o] = False
-                if connected[i, node_i]:
-                    print(f"Connection ({i}, {node_i}) already exists when adding a new node")
+                # if connected[i, node_i]:
+                #     print(f"Connection ({i}, {node_i}) already exists when adding a new node")
                 connected[i, node_i] = True
                 connected[node_i, o] = True
 
@@ -480,7 +452,7 @@ def train(nn, x, y, verbose=0):
     optimizer = keras.optimizers.Adam(learning_rate=5e-3)
     loss_fn = keras.losses.CategoricalCrossentropy()
     nn.compile(optimizer, loss_fn)
-    history = nn.fit(x, y_cat, batch_size=50, epochs=50, verbose=verbose)
+    history = nn.fit(x, y_cat, batch_size=100, epochs=50, verbose=verbose)
 
     return nn
 

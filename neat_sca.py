@@ -140,7 +140,7 @@ def evaluate_genome_fitness(genome, config):
         optimizer = keras.optimizers.Adam(learning_rate=5e-3)
         loss_fn = keras.losses.CategoricalCrossentropy()
         nn.compile(optimizer, loss_fn)
-        history = nn.fit(x, y_cat, batch_size=50, epochs=50, verbose=0)
+        history = nn.fit(x, y_cat, batch_size=100, epochs=30, verbose=0)
 
     fit = float(
         compute_fitness(nn, x, y, pt, metric, k, len(x), k_idx, g_hw)
