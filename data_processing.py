@@ -7,8 +7,7 @@ from sklearn import preprocessing
 from constants import HW
 
 
-def load_data(dataset_name, hw=False, remote=False, noise=False,
-              noise_std=0.05, desync=0):
+def load_data(dataset_name, hw=False, remote=False, noise_std=0.0, desync=0):
     load_funcs = {
         "ascad": load_prepared_ascad_vars,
         "ascad_desync50": 7,
@@ -22,7 +21,7 @@ def load_data(dataset_name, hw=False, remote=False, noise=False,
     x = list(load_funcs[dataset_name](hw=hw, remote=remote))
 
     # Load train and attack traces with countermeasures if desired
-    if noise:
+    if noise_std > 0.0:
         # x[0] = np.load(f"{dataset_name}_train_traces_noisy.npy")
         # x[3] = np.load(f"{dataset_name}_atk_traces_noisy.npy")
         x[0] = apply_noise(x[0], std=noise_std)

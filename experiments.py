@@ -45,21 +45,26 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
                     parallelise=True, avg_pooling=True, pool_param=1,
                     dataset_name="ascad", only_evolve_hidden=False, noise=0.0,
                     desync=0, fs_neat=False, run_idx=-1, n_atk_folds=100,
-                    comp_thresh=None, tselect=False):
+                    comp_thresh=None, tselect=False, config_path=None):
     subkey_idx = commonly_used_subkey_idx(dataset_name)
+    apply_noise = noise > 0.0
     (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
-        load_data(dataset_name, hw=hw, remote=remote)
+        load_data(dataset_name, hw=hw, remote=remote, noise_std=noise,
+                  desync=desync)
 
     exp_name = gen_neat_exp_name(
         pop_size, max_gens, hw, avg_pooling, dataset_name, only_evolve_hidden,
         noise=noise, desync=desync, fs_neat=fs_neat
     )
 
+    if config_path is None:
+        config_path = f"./neat-config-{dataset_name}"
+
     # Train with NEAT
     neatsca = NeatSca(
         pop_size, max_gens, remote=remote, parallelise=parallelise,
         only_evolve_hidden=only_evolve_hidden,
-        config_filepath=f"./neat-config-{dataset_name}", fs_neat=fs_neat,
+        config_filepath=config_path, fs_neat=fs_neat,
         comp_thresh=comp_thresh, tselect=tselect
     )
     (best_indiv, config) = neatsca.run(x_train, y_train, pt_train, k_train, hw)
@@ -92,21 +97,11 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
 
         filepath = f"{dir_path}/run{run_idx}_results.pickle"
         results = (
-            best_indiv, best_fitness_per_gen, config, top_ten, mean_krs, inc_kr
+            best_indiv, config, best_fitness_per_gen, top_ten, mean_krs, inc_kr
         )
 
         with open(filepath, "wb") as f:
             pickle.dump(results, f)
-
-    # kfold_ascad_atk_with_varying_size(
-    #     100,
-    #     nn,
-    #     subkey_idx=subkey_idx,
-    #     experiment_name=exp_name,
-    #     atk_data=(x_atk, y_atk, k_atk, pt_atk),
-    #     parallelise=parallelise,
-    #     hw=hw
-    # )
 
 
 def weight_evo_experiment_from_params(cline_args, remote=True):
@@ -279,7 +274,8 @@ def results_from_exp_names(exp_names, exp_labels, file_tag, neat=False):
             results = None
             with open(filepath, "rb") as f:
                 results = pickle.load(f)
-            best_fitness_per_gen, inc_kr = results[1], results[-1]
+            inc_kr = results[-1]
+            best_fitness_per_gen = results[2] if neat else results[1]
             if neat:
                 # Recall our NEAT implementation only uses fitness maximisation
                 best_fitness_per_gen = -np.array(best_fitness_per_gen)

@@ -333,10 +333,12 @@ def set_global_data(dataset_name, n_traces, subkey_idx, n_folds=1,
                     remote=False, hw=True,
                     metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
                     balanced=False, use_sgd=True, use_avg_pooling=True,
-                    pool_param=2, seed=None, balance_on_hw=False):
+                    pool_param=2, seed=None, balance_on_hw=False,
+                    noise=0.0, desync=0):
     # Always load ID labels, unless not balancing or balancing on HW
     load_hw_labels = hw if not balanced or balance_on_hw else False
-    data = load_data(dataset_name, load_hw_labels, remote)
+    data = load_data(dataset_name, load_hw_labels, remote, noise_std=noise,
+                     desync=desync)
 
     if seed:
         np.random.seed(seed)
