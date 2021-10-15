@@ -67,11 +67,10 @@ configs = [
     (250, True,  True,  "cw", True, 0.05, 0,  False),
     (250, True,  True,  "cw", True, 0,    50, False),
     # Full FS-NEAT vs. unprotected CW
-    (500, True,  True,  "cw", False, 0, 0, True),
+    (250, True,  True,  "cw", False, 0, 0, True),
     # Experiments up to here are currently running (configs[6] up until and including configs[10])
-    # ASCAD HW/AP 1-node start evolution, both full and HO
-    (250, True, True,  "ascad", True, 0, 0, False),
-    (250, True, True,  "ascad", True, 0, 0, False),
+    # ASCAD HW/AP 1-node start evolution, only full since HO doesn't seem to provide any significant benefit
+    (250, True, True,  "ascad", False, 0, 0, False),
     # TODO: Noise & desync experiments for larger amounts of noise/desync with HO or Full NEAT, depending on which performed better in previous CM experiments.
     (250, True,  True,  "cw", True,  0.08, 0,   False),
     (250, True,  True,  "cw", True,  0,    100, False),
@@ -86,12 +85,12 @@ n_traces = 3072 if cf[3] == "cw" else 19200
 # set_nn_load_func("mlp_cw", (False, False, 1))
 # set_nn_load_func("mlp_ascad")
 
-set_global_data(
-    cf[3], n_traces, subkey_idx=k_idx, n_folds=1, remote=True, hw=cf[1],
-    metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY, balanced=True,
-    use_sgd=True, use_avg_pooling=cf[2], seed=77, pool_param=pool_param,
-    balance_on_hw=False, noise=cf[5], desync=cf[6]
-)
+# set_global_data(
+#     cf[3], n_traces, subkey_idx=k_idx, n_folds=1, remote=True, hw=cf[1],
+#     metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY, balanced=True,
+#     use_sgd=True, use_avg_pooling=cf[2], seed=77, pool_param=pool_param,
+#     balance_on_hw=False, noise=cf[5], desync=cf[6]
+# )
 # set_global_data(
 #    "cw", 1536, subkey_idx=1, n_folds=1, remote=False, hw=True,
 #    metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY, balanced=True,
@@ -119,10 +118,10 @@ if __name__ == "__main__":
 
     # TODO: Rethink pop size & gens -> higher psize is basically essential -> have to observe runtime for first few experiments.
     # -> could try psize 1000, 100 gens for HW/AP full NEAT
-    cf = configs[int(sys.argv[1])]
-    pool_param = 4 if cf[3] == "cw" else 2
-    psize = 500 if cf[3] == "cw" else 100
-    neat_experiment(pop_size=psize, max_gens=cf[0], remote=True, hw=cf[1], parallelise=True, avg_pooling=cf[2], pool_param=pool_param, dataset_name=cf[3], only_evolve_hidden=cf[4], noise=cf[5], desync=cf[6], fs_neat=cf[7], run_idx=int(sys.argv[2]))
+    # cf = configs[int(sys.argv[1])]
+    # pool_param = 4 if cf[3] == "cw" else 2
+    # psize = 500 if cf[3] == "cw" else 100
+    # neat_experiment(pop_size=psize, max_gens=cf[0], remote=True, hw=cf[1], parallelise=True, avg_pooling=cf[2], pool_param=pool_param, dataset_name=cf[3], only_evolve_hidden=cf[4], noise=cf[5], desync=cf[6], fs_neat=cf[7], run_idx=int(sys.argv[2]))
 
     # neat_experiment(pop_size=250, max_gens=100, remote=True, hw=bool(int(sys.argv[1])), parallelise=True, avg_pooling=bool(int(sys.argv[2])), dataset_name="ascad", only_evolve_hidden=True)
     # neat_experiment(pop_size=6, max_gens=3, remote=False, hw=True, parallelise=True, avg_pooling=True, pool_param=4, dataset_name="cw", only_evolve_hidden=False, fs_neat=False, n_atk_folds=5, noise=0.05, desync=15)
@@ -162,11 +161,34 @@ if __name__ == "__main__":
     # file_tag = "ascad_weight_evo"
     # results_from_exp_names(exp_names, exp_labels, file_tag, separate_fit_prog_plots=True)
 
-    # exp_names = ["neat-ps500-hw-pool-cw-250gens-full-noise0-desync0", "neat-ps500-hw-pool-cw-250gens-hidden-noise0-desync0", "neat-ps100-id-pool-ascad-250gens-full-noise0-desync0"]
-    # # Yet to retrieve: neat-ps100-id-nopool-ascad-250gens-full-noise0-desync0, neat-ps100-id-pool-ascad-250gens-hidden-noise0-desync0, neat-ps100-id-nopool-ascad-250gens-hidden-noise0-desync0
-    # exp_labels = ["CW (Full) ", "CW (Hid. only)", "ASCAD (Full)"]
+    # All neat experiments names:
+    # -  neat-ps500-hw-pool-cw-250gens-full-noise0-desync0
+    # -  neat-ps500-hw-pool-cw-250gens-hidden-noise0-desync0
+    # -  neat-ps100-id-no_pool-ascad-250gens-full-noise0-desync0
+    # -  neat-ps100-id-pool-ascad-250gens-full-noise0-desync0
+    # -  neat-ps100-id-no_pool-ascad-250gens-hidden-noise0-desync0
+    # -  neat-ps100-id-pool-ascad-250gens-hidden-noise0-desync0
+    # -  neat-ps500-hw-pool-cw-250gens-full-noise0.05-desync0
+    # -  neat-ps500-hw-pool-cw-250gens-full-noise0-desync50
+    # -  neat-ps500-hw-pool-cw-250gens-hidden-noise0.05-desync0
+    # -  neat-ps500-hw-pool-cw-250gens-hidden-noise0-desync50
+    # -  neat-ps500-hw-pool-cw-250gens-full-noise0-desync0-fs
+    # -  neat-ps100-hw-pool-ascad-250gens-hidden-noise0-desync0
+    # -  neat-ps100-hw-pool-ascad-250gens-hidden-noise0-desync0
+    # -  neat-ps500-hw-pool-cw-250gens-hidden-noise0.08-desync0
+    # -  neat-ps500-hw-pool-cw-250gens-hidden-noise0-desync100
+    # -  neat-ps500-hw-pool-cw-250gens-full-noise0.05-desync50
+    exp_names_ascad = ["neat-ps100-id-pool-ascad-250gens-full-noise0-desync0", "neat-ps100-id-no_pool-ascad-250gens-full-noise0-desync0",
+                       "neat-ps100-id-pool-ascad-250gens-hidden-noise0-desync0", "neat-ps100-id-no_pool-ascad-250gens-hidden-noise0-desync0"]
+    exp_names_cw = ["neat-ps500-hw-pool-cw-250gens-full-noise0-desync0", "neat-ps500-hw-pool-cw-250gens-hidden-noise0-desync0", "neat-ps500-hw-pool-cw-250gens-full-noise0.05-desync0",
+                    "neat-ps500-hw-pool-cw-250gens-hidden-noise0.05-desync0", "neat-ps500-hw-pool-cw-250gens-full-noise0-desync50", "neat-ps500-hw-pool-cw-250gens-hidden-noise0-desync50"]
+    # # Yet to retrieve: "neat-ps500-hw-pool-cw-250gens-full-noise0-desync0-fs"
+    # exp_labels_ascad = ["CW (Full) ", "CW (Hid. only)", "ASCAD (Full)"]
+    exp_labels_cw = ["Full", "HO", "Noise (F)", "Noise (HO)", "Desync (F)", "Desync (HO)"]
     # file_tag = "neat_250gens_many_traces"
+    file_tag_cw = "NEAT_on_CW"
     # results_from_exp_names(exp_names, exp_labels, file_tag, neat=True)
+    results_from_exp_names(exp_names_cw, exp_labels_cw, file_tag_cw, neat=True)
 
     # eval_best_nn_from_exp_name("ps1040-mp0.03-mr0.1-mpdr0.999-fdr0.2-ass3584-tsel-tp1.0-mt_CAEN-nofi-balnc-cor0.5-randwi-nosgd", "ascad", "Final weight evolution NN performance on ASCAD traces")
     # eval_best_nn_from_exp_name("ps1040-mp0.03-mr0.1-mpdr0.999-fdr0.2-ass315-tsel-tp1.0-mt_CAEN-nofi-balnc-cor0.5_same-folds", "cw", "CW pure weight evo.")
@@ -184,28 +206,32 @@ if __name__ == "__main__":
 
     # pop_size, max_gens, hw, avg_pooling, dataset_name, only_evolve_hidden, noise, desync, fs_neat
     # neat_argss = [
-    #     # (100, 250, True,  True,  "cw", False, 0,    0,   False),
-    #     # (100, 250, True,  True,  "cw", True,  0,    0,   False),
-    #     # (100, 250, False, False, "ascad", False, 0, 0, False),
-    #     # (100, 250, False, True,  "ascad", False, 0, 0, False),
-    #     # (100, 250, True,  False, "ascad", False, 0, 0, False),
-    #     # (100, 250, True,  True,  "ascad", False, 0, 0, False),
-    #     # (100, 250, False, False, "ascad", True, 0, 0, False),
-    #     # (100, 250, False, True,  "ascad", True, 0, 0, False),
-    #     # (100, 250, True,  False, "ascad", True, 0, 0, False),
-    #     # (100, 250, True,  True,  "ascad", True, 0, 0, False),
-    #     #
+    #     (500, 250, True,  True,  "cw", False, 0,    0,   False),  # Full
+    #     (500, 250, True,  True,  "cw", True,  0,    0,   False),  # Hidden-only
+    #     # AP on/off for full NEAT evolution on ASCAD
+    #     (100, 250, False, False, "ascad", False, 0, 0, False),
+    #     (100, 250, False, True,  "ascad", False, 0, 0, False),
+    #     # AP on/off for hidden-only NEAT evolution on ASCAD
+    #     (100, 250, False, False, "ascad", True, 0, 0, False),
+    #     (100, 250, False, True,  "ascad", True, 0, 0, False),
+    #     # FINISHED UP TO THIS POINT (until and including configs[5])
+    #     # NEAT vs. CW with countermeasures -> only perform with AP + HW -> Hidden-evo and full both have advantages, but hidden-only seems to be better in simple cases -> best option is to do both for both CM 
+    #     # Full
     #     (500, 250, True,  True,  "cw", False, 0.05, 0,  False),
     #     (500, 250, True,  True,  "cw", False, 0,    50, False),
+    #     # HO
     #     (500, 250, True,  True,  "cw", True, 0.05, 0,  False),
     #     (500, 250, True,  True,  "cw", True, 0,    50, False),
-    #     (500, 500, True,  True,  "cw", False, 0, 0, True)
-    #     #
-    #     # (100, 250, True,  True,  "cw", True, 0.05, 0,   False),
-    #     # (100, 250, True,  True,  "cw", True, 0,    50,  False),
-    #     # (100, 250, True,  True,  "cw", True, 0,    100, False),
-    #     # (100, 250, True,  True,  "cw", True, 0.05, 50,  False),
-    #     # (100, 1000, True,  True,  "cw", False, 0, 0, True)
+    #     # Full FS-NEAT vs. unprotected CW
+    #     (500, 250, True,  True,  "cw", False, 0, 0, True),
+    #     # Experiments up to here are currently running (configs[6] up until and including configs[10])
+    #     # ASCAD HW/AP 1-node start evolution, both full and HO
+    #     (100, 250, True, True,  "ascad", True, 0, 0, False),
+    #     (100, 250, True, True,  "ascad", True, 0, 0, False),
+    #     # TODO: Noise & desync experiments for larger amounts of noise/desync with HO or Full NEAT, depending on which performed better in previous CM experiments.
+    #     (500, 250, True,  True,  "cw", True,  0.08, 0,   False),
+    #     (500, 250, True,  True,  "cw", True,  0,    100, False),
+    #     (500, 250, True,  True,  "cw", False, 0.05, 50,  False)
     # ]
     # construct_neat_dirs(neat_argss)
 

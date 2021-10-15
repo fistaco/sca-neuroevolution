@@ -253,6 +253,27 @@ def build_variable_small_mlp_ascad(hw=False, avg_pooling=False, n_layers=1,
     return Model(inputs, x)
 
 
+def build_ten_eight_nn_ascad(hw=False, avg_pooling=False):
+    """
+    Builds and returns an MLP for the ASCAD data set with 10 nodes in the first
+    hidden layer and 8 nodes in the second.
+    """
+    inputs = keras.Input((700, 1))
+
+    if avg_pooling:
+        x = AveragePooling1D(pool_size=2, strides=2)(inputs)
+        x = Flatten()(x)
+    else:
+        x = Flatten()(inputs)
+
+    x = Dense(10, activation=tf.nn.selu)(x)
+    x = Dense(10, activation=tf.nn.selu)(x)
+
+    x = Dense((9 if hw else 256), activation=tf.nn.softmax)(x)
+
+    return Model(inputs, x)
+
+
 def small_mlp_cw(build=False, hw=False, n_dense=2):
     """
     Builds or loads and returns an MLP for the ChipWhisperer data set.

@@ -262,6 +262,7 @@ def results_from_exp_names(exp_names, exp_labels, file_tag, neat=False):
     """
     n_repeats = 5
     fit_progress_arrays = []
+    mean_krss = []
     inc_krs = []
     for (i, exp_name) in enumerate(exp_names):
         best_inc_kr = 3.0
@@ -286,13 +287,20 @@ def results_from_exp_names(exp_names, exp_labels, file_tag, neat=False):
                 best_inc_kr = inc_kr
                 best_fit_progress_arr = best_fitness_per_gen
 
+                if neat:
+                    best_mean_krs = results[-2]
+
         plot_gens_vs_fitness(exp_labels[i], best_fit_progress_arr)
         fit_progress_arrays.append(best_fit_progress_arr)
+        if neat:
+            mean_krss.append(best_mean_krs)
 
     labels = np.repeat(exp_labels, n_repeats)
     plot_var_vs_key_rank(labels, inc_krs, box=True, var_name="Experiment")
     plot_gens_vs_fitness(file_tag, *fit_progress_arrays,
                          labels=exp_labels)
+    if neat:
+        plot_n_traces_vs_key_rank(file_tag, *mean_krss, labels=exp_labels)
 
 
 def eval_best_nn_from_exp_name(exp_name, dataset_name, exp_label, k_idx=1,
@@ -1417,7 +1425,7 @@ def neat_cce_progress_analysis():
         )
 
 
-def construct_neat_dirs(argss):
+def construct_neat_dirs(argss, only_print=False):
     """
     Constructs a directory for the experiment names corresponding to the given
     NEAT argument lists.
@@ -1426,8 +1434,10 @@ def construct_neat_dirs(argss):
         exp_name = gen_neat_exp_name(*args)
         dir_path = f"neat_results/{exp_name}"
 
-        if not os.path.exists(dir_path):
+        if not os.path.exists(dir_path) and not only_print:
             os.mkdir(dir_path)
+
+        print(f"Constructed {dir_path}")
 
 
 def compute_memory_requirements(pop_sizes, atk_set_sizes):

@@ -57,7 +57,7 @@ def plot_n_traces_vs_key_rank(exp_name, *key_rankss, labels=None):
 
         labels: A list of labels corresponding to the lists of key ranks.
     """
-    plt.title(f"Number of traces ~ key rank ({exp_name})")
+    plt.title(f"Number of traces ~ key rank ({exp_name.replace('_', ' ')})")
     plt.xlabel("Traces")
     plt.ylabel("Key rank")
     

@@ -329,6 +329,24 @@ def draw_genome_nn(genome, label="", only_draw_hidden=True, n_outputs=256):
     dot.render(f"fig/neat-nn-vis-{label}", view=False)
 
 
+def evolve_binary_nn(output_class, hw=False):
+    """
+    Evolves a binary NN for the given output class by running NEAT with
+    training data containing a 50-50 split of traces with and without the
+    given output class as a label.
+    """
+    pass
+
+
+def train_stacked_model(model_dir):
+    """
+    Stacks the models in the given `model_dir` by obtaining those models'
+    outputs for the given training data and using those as inputs for a
+    logistic regression model to produce a final label output.
+    """
+    pass
+
+
 def set_global_data(dataset_name, n_traces, subkey_idx, n_folds=1,
                     remote=False, hw=True,
                     metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
