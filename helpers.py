@@ -459,7 +459,7 @@ def gen_extended_exp_name(ps, mp, mr, mpdr, fdr, ass, sf, mt, fi, bt, tp, cor,
 
 
 def gen_neat_exp_name(pop_size, gens, hw, pool, data_name, hidden_only,
-                      noise=0.0, desync=0, fs_neat=False):
+                      noise=0.0, desync=0, fs_neat=False, suffix=""):
     """
     Generates an experiment name for a NEAT run using the given arguments.
     """
@@ -468,7 +468,16 @@ def gen_neat_exp_name(pop_size, gens, hw, pool, data_name, hidden_only,
     ho_str = "hidden" if hidden_only else "full"
     fs_str = "-fs" if fs_neat else ""
     return f"neat-ps{pop_size}-{lm_str}-{pool_str}-{data_name}-{gens}gens-" + \
-           f"{ho_str}-noise{noise}-desync{desync}{fs_str}"
+           f"{ho_str}-noise{noise}-desync{desync}{fs_str}-{suffix}"
+
+
+def gen_neat_exp_name_suffix(n_train, n_valid, custom_suffix=""):
+    """
+    Generates a suffix string that can be used as an argument for the
+    `gen_neat_exp_name` function.
+    """
+    suffix_str = f"-{custom_suffix}" if custom_suffix else ""
+    return f"{n_train}-traintraces-{n_valid}-val{suffix_str}"
 
 
 def calc_max_fitness(metric_type):
