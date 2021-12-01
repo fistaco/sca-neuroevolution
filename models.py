@@ -232,11 +232,14 @@ def random_ascad_neat_mlp(hw=False, avg_pooling=False, gens=100):
 
 
 def build_variable_small_mlp_ascad(hw=False, avg_pooling=False, n_layers=1,
-                                   n_layer_nodes=10):
+                                   n_layer_nodes=10, binary=False):
     """
     Builds and returns an MLP for the ASCAD data set according to the given
     hyperparameters.
     """
+    n_out = 1 if binary else (9 if hw else 256)
+    act = tf.nn.sigmoid if binary else tf.nn.softmax
+
     inputs = keras.Input((700, 1))
 
     if avg_pooling:
@@ -248,15 +251,15 @@ def build_variable_small_mlp_ascad(hw=False, avg_pooling=False, n_layers=1,
     for _ in range(n_layers):
         x = Dense(n_layer_nodes, activation=tf.nn.selu)(x)
 
-    x = Dense((9 if hw else 256), activation=tf.nn.softmax)(x)
+    x = Dense(n_out, activation=act)(x)
 
     return Model(inputs, x)
 
 
-def build_ten_eight_nn_ascad(hw=False, avg_pooling=False):
+def build_ten_x_nn_ascad(n_snd_layer_nodes=5, hw=False, avg_pooling=False):
     """
     Builds and returns an MLP for the ASCAD data set with 10 nodes in the first
-    hidden layer and 8 nodes in the second.
+    hidden layer and `n_snd_layer_nodes` in the second.
     """
     inputs = keras.Input((700, 1))
 
@@ -267,7 +270,7 @@ def build_ten_eight_nn_ascad(hw=False, avg_pooling=False):
         x = Flatten()(inputs)
 
     x = Dense(10, activation=tf.nn.selu)(x)
-    x = Dense(10, activation=tf.nn.selu)(x)
+    x = Dense(n_snd_layer_nodes, activation=tf.nn.selu)(x)
 
     x = Dense((9 if hw else 256), activation=tf.nn.softmax)(x)
 
@@ -441,6 +444,17 @@ def load_small_mlp_ascad_trained_first_layer():
     return keras.models.load_model(path, compile=False)
 
 
+def multinom_log_reg_nn(n_cls=256):
+    """
+    Builds and returns an MLP that implements multinomial logistic regression.
+    """
+    inputs = keras.Input((n_cls, 1))
+    x = Flatten()(inputs)
+    x = Dense(n_cls, activation=tf.nn.softmax)(x)
+
+    return Model(inputs, x)
+
+
 def build_small_cnn_rand_init():
     """
     Constructs and returns the small convolutional NN proposed by Zaid et al.
@@ -463,7 +477,7 @@ def build_small_cnn_rand_init():
     return cnn
 
 
-def train(nn, x, y, verbose=0):
+def train(nn, x, y, verbose=0, epochs=50):
     """
     Trains the given `nn` with SGD on the given inputs (`x`) and labels (`y`).
     """
@@ -473,7 +487,7 @@ def train(nn, x, y, verbose=0):
     optimizer = keras.optimizers.Adam(learning_rate=5e-3)
     loss_fn = keras.losses.CategoricalCrossentropy()
     nn.compile(optimizer, loss_fn)
-    history = nn.fit(x, y_cat, batch_size=100, epochs=50, verbose=verbose)
+    history = nn.fit(x, y_cat, batch_size=100, epochs=epochs, verbose=verbose)
 
     return nn
 
