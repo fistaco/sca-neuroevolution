@@ -1,3 +1,4 @@
+from copy import deepcopy
 import multiprocessing as mp
 import os
 import pickle
@@ -14,7 +15,7 @@ from data_processing import (load_ascad_atk_variables, load_ascad_data,
                              load_prepared_ascad_vars, sample_data,
                              scale_inputs, shuffle_data, balanced_sample,
                              load_chipwhisperer_data, load_data,
-                             commonly_used_subkey_idx, sample_traces)
+                             commonly_used_subkey_idx, sample_traces, to_hw)
 from genetic_algorithm import (GeneticAlgorithm, evaluate_fitness,
                                train_nn_with_ga)
 from helpers import (compute_fold_keyranks, compute_mem_req,
@@ -45,7 +46,8 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
                     parallelise=True, avg_pooling=True, pool_param=1,
                     dataset_name="ascad", only_evolve_hidden=False, noise=0.0,
                     desync=0, fs_neat=False, run_idx=-1, n_atk_folds=100,
-                    comp_thresh=None, tselect=False, config_path=None):
+                    comp_thresh=None, tselect=False, config_path=None,
+                    exp_name_suffix=""):
     subkey_idx = commonly_used_subkey_idx(dataset_name)
     apply_noise = noise > 0.0
     (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
@@ -54,7 +56,7 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
 
     exp_name = gen_neat_exp_name(
         pop_size, max_gens, hw, avg_pooling, dataset_name, only_evolve_hidden,
-        noise=noise, desync=desync, fs_neat=fs_neat
+        noise=noise, desync=desync, fs_neat=fs_neat, suffix=exp_name_suffix
     )
 
     if config_path is None:
@@ -343,7 +345,7 @@ def weight_heatmaps_from_exp_name(exp_label, exp_name=None, weights=None):
 
 def best_results_from_exp_name(exp_name):
     """
-    Obtains the best tuple of results over all runs for the given `exp_name.
+    Obtains the best tuple of results over all runs for the given `exp_name`.
     """
     n_repeats = 5
     dir_path = f"res/{exp_name}"
@@ -1091,20 +1093,221 @@ def kfold_ascad_atk_with_varying_size(k, nn, subkey_idx=2, experiment_name="",
     return mean_ranks
 
 
-def draw_neat_nn_from_exp_file(exp_name, exp_label, only_draw_hidden=True):
+def draw_neat_nn_from_exp_file(exp_name, exp_label, only_draw_hidden=True,
+                               draw_inp_to_hid=True, draw_new_hid_to_out=True):
     """
     Uses dot to draw a visualisation of the best NN resulting from a NEAT run
     by extracting the best NN from the result file corresponding to the
     given `exp_name`.
 
     """
-    with open(f"neat_results/{exp_name}_results.pickle", "rb") as f:
-        (_, top_ten) = pickle.load(f)
-        best_indiv = top_ten[0]
-
+    best_indiv = best_results_from_exp_name(exp_name)[0]
+    # Deprecated code for old NEAT runs
+    # with open(f"res/{exp_name}_results.pickle", "rb") as f:
+    #     (_, top_ten) = pickle.load(f)
+    #     best_indiv = top_ten[0]
     n_outputs = 9 if "hw" in exp_name else 256
 
-    draw_genome_nn(best_indiv, exp_label, only_draw_hidden, n_outputs)
+    draw_genome_nn(
+        best_indiv, exp_label, only_draw_hidden, n_outputs, draw_inp_to_hid,
+        draw_new_hid_to_out
+    )
+
+
+def neat_results_genome_stats(exp_name):
+    """
+    Computes statistics about the genomes from a given experiment's result
+    files.
+    """
+    # Objective: Determine what makes the NN architectures work
+    #            -> all best NNs from results are considered to "work" for CW
+    #            -> Find commonalities between NNs architectures
+    # How do you describe an NN architecture?
+    # - Depth = max. number of conns between an input and output node
+    #
+    # - Top 5 non-init nodes with the largest number of outgoing connections
+    # - Top 5 non-init nodes with the largest number of incoming connections. This stat and the previous one track useful added nodes and connections.
+    # - Top 5 non-init nodes with largest number of total connections
+    # - Top 5 input nodes with the most outgoing connections -> indicates input trace importance if there's overlap
+    # - Number of non-init nodes with only a single incoming and outgoing connection, i.e. useless nodes
+    # - Output node with the most incoming connections
+    #
+    # - Number of added nodes, resp. connections directly after inputs or directly before outputs
+    # CW archs work -> < 250 nodes and < 500 connections are added -> each addition seems to improve fitness -> which additions occur the most? -> can't observe accurately -> where are additions made most often?
+    # ASCAD archs don't work -> why do the added connections not do anything? -> would a "perfect" addition of 1 node and 1 connection improve the CCE on any trace/epoch combination?
+    #                                                                         -> if so, why does the algorithm not produce "perfect" additions? Could we tune the parameters to obtain them?
+    # TODO: Test CCE improvement for incremental perfect additions on ASCAD -> CCE improvements are small, so either we have to find another fitness function OR try a method with larger modifications OR apply to smaller networks to find better CCE improvements OR use more traces and epochs if the resources are available
+    # TODO: Compute statistics for CW archs. If Stjepan is not satisfied, we can fall back on visualisation tools or something.
+    # For more in-depth analysis with good visualisation, I would need to repeat the early part of some experiments to obtain the NNs produced after a small number of generations
+    n_repeats = 5
+    dir_path = f"res/{exp_name}"
+
+    # Prepare result file
+    res_file = open(f"fig/neat/arch-info/{exp_name}_archstats.txt", "w")
+
+    for run_nr in range(n_repeats):
+        print(f"Obtaining architecture statistics for run {run_nr}...")
+
+        # Load results
+        filepath = f"{dir_path}/run{run_nr}_results.pickle"
+        results = None
+        with open(filepath, "rb") as f:
+            results = pickle.load(f)
+
+        best_indiv = results[0]
+        conf = results[1].genome_config
+        n_in = conf.num_inputs
+        n_out = conf.num_outputs
+
+        # Iterate over nodes and edges to obtain stats
+        base_node_ids = list(best_indiv.nodes.keys())
+        inp_node_out_nums = {(-i-1):0 for i in range(n_in)}
+        out_node_in_nums = {n:0 for n in range(n_out)}
+        non_init_conn_nums = {
+            n: [0, 0]  # [num_in, num_out]
+            for n in base_node_ids
+            if n >= n_out + conf.num_hidden    
+        } 
+
+        # Iterate over connections while tracking stats
+        for ((i, o), c) in best_indiv.connections.items():
+            if not c.enabled:
+                continue
+
+            # Stats for non-init nodes
+            if i in non_init_conn_nums:
+                non_init_conn_nums[i][1] += 1  # Increment outgoing
+            if o in non_init_conn_nums:
+                non_init_conn_nums[o][0] += 1  # Increment incoming
+
+            # Stats for input nodes
+            if i < 0:
+                inp_node_out_nums[i] += 1
+
+            # Stats for output nodes
+            if o < n_out:
+                out_node_in_nums[o] += 1
+
+        # Compute the stats
+        non_init_most_in = [(n, nums[0]) for (n, nums) in sorted(
+            non_init_conn_nums.items(), key=lambda x: x[1][0], reverse=True
+        )[:3]]
+        non_init_most_out = [(n, nums[1]) for (n, nums) in sorted(
+            non_init_conn_nums.items(), key=lambda x: x[1][1], reverse=True
+        )[:3]]
+        non_init_conn_totals = sorted(
+            [(n, sum(nums)) for (n, nums) in non_init_conn_nums.items()],
+            key=lambda x: x[1],
+            reverse=True
+        )[:3]
+        inp_most_out = sorted(
+            inp_node_out_nums.items(), key=lambda x: x[1], reverse=True)[:3]
+        out_most_in = max(out_node_in_nums.items(), key=lambda x: x[1])
+        n_redundant = len([n for (n, x) in non_init_conn_totals if x == 2])
+
+        res_file.writelines([
+            f"Run {run_nr}\n",
+            f"Non-init. nodes with most incoming conns: {non_init_most_in}\n",
+            f"Non-init. nodes with most outgoing conns: {non_init_most_out}\n",
+            f"Non-init. nodes with most total conns: {non_init_conn_totals}\n",
+            f"Input nodes with most outgoing conns: {inp_most_out}\n",
+            f"Output node with most incoming conns: {out_most_in}\n",
+            f"Number of redundant non-init nodes: {n_redundant}\n\n"
+        ])
+
+    res_file.close()
+
+
+def test_good_mutation_cce_improvement(hw=False):
+    """
+    Observes the effect of a "good" mutation sequence, specifically an extra
+    hidden node fully connected to the existing hidden nodes and output nodes,
+    on the CCE compared to an unevolved ASCAD NN with a single layer of 10
+    hidden nodes.
+    """
+    optimizer = keras.optimizers.Adam(learning_rate=5e-3)
+    loss_fn = keras.losses.CategoricalCrossentropy()
+
+    np.random.seed(77)
+    tf.random.set_seed(77)
+    (x_train, y_train, pt_train, _, _, y_atk, _, _) = \
+        load_data("ascad", hw=False, remote=False)
+    x_train, y_train, pt_train = \
+        sample_traces(19200, x_train, y_train, pt_train, 256, balanced=True)
+
+    if hw:
+        y_train = to_hw(y_train)
+        y_atk = to_hw(y_atk)
+
+    # Setup initial NN genome
+    config = neat.Config(
+        neat.DefaultGenome, neat.DefaultReproduction, neat.DefaultSpeciesSet,
+        neat.DefaultStagnation, "./neat-config-ascad", only_evolve_hidden=False
+    )
+    genome_conf = config.genome_config
+    pool_param = 2  # Average pooling is enabled
+    n_outputs = 256
+    n_inputs = len(x_train[0])//pool_param
+    genome_conf.num_hidden = 10
+    config.genome_config.num_inputs = n_inputs
+    config.genome_config.input_keys = [-i-1 for i in range(n_inputs)]
+    config.genome_config.num_outputs = n_outputs
+    config.genome_config.output_keys = list(range(n_outputs))
+    pop = neat.Population(config).population
+    init_genome = pop[1]
+
+    # Evaluate unevolved NN for the sake of comparison
+    np.random.seed(77)
+    tf.random.set_seed(77)
+    init_nn = genome_to_keras_model(init_genome, config, use_avg_pooling=True, pool_param=pool_param)
+    y_cat = keras.utils.to_categorical(y_train)
+    init_nn.compile(optimizer, loss_fn)
+    history = init_nn.fit(x_train, y_cat, batch_size=100, epochs=30, verbose=0, shuffle=True)
+    init_nn_cce = history.history["loss"][-1]
+
+    # Construct 10 genomes with "good" random mutations applied to them
+    genomes = []
+    for i in range(10):
+        genome = deepcopy(init_genome)
+
+        # Add a node between a random hidden node and a random output node
+        new_node_id = genome_conf.get_new_node_key(genome.nodes)
+        node = genome.create_node(genome_conf, new_node_id)
+        genome.nodes[new_node_id] = node
+        rnd_hid_node_id, rnd_out_node_id = np.random.randint(n_outputs, n_outputs + genome_conf.num_hidden), np.random.randint(n_outputs)
+        conn_to_split = genome.connections[(rnd_hid_node_id, rnd_out_node_id)]
+        conn_to_split.enabled = False
+        genome.add_connection(genome_conf, rnd_hid_node_id, new_node_id, 1.0, True)
+        genome.add_connection(genome_conf, new_node_id, rnd_out_node_id, conn_to_split.weight, True)
+
+        # Connect all existing hidden nodes to the new hidden node
+        for hid_id in range(n_outputs, n_outputs + genome_conf.num_hidden):
+            genome.add_connection(genome_conf, hid_id, new_node_id, 1.0, True)
+
+        # Connect the new hidden node to all remaining output nodes
+        for out_id in range(n_outputs):
+            if out_id == rnd_out_node_id:
+                continue
+            genome.add_connection(genome_conf, new_node_id, out_id, 1.0, True)
+
+        genomes.append(genome)
+
+    # Evaluate each of the genomes' CCE difference with the same seed
+    cce_diffs = np.zeros(10, dtype=np.float64)
+    for i in range(10):  # Repeat 10 times to account for randomness
+        print(f"Commencing \"good\" mutation CCE diff experiment {i}...")
+
+        np.random.seed(77)
+        tf.random.set_seed(77)
+        nn = genome_to_keras_model(genomes[i], config, use_avg_pooling=True, pool_param=pool_param)
+
+        y_cat = keras.utils.to_categorical(y_train)
+        nn.compile(optimizer, loss_fn)
+        history = nn.fit(x_train, y_cat, batch_size=100, epochs=30, verbose=0, shuffle=True)
+        cce_diffs[i] = history.history["loss"][-1] - init_nn_cce
+
+    print(cce_diffs)
+    print(f"Mean CCE diff = {cce_diffs.mean()}")
 
 
 def test_fitness_function_consistency(nn_quality="medium"):
@@ -1322,6 +1525,7 @@ def infoneat_reproducability_test(remote=False):
     #     so what's with these initialisation ranges? -> Xavier weight init has min/max +/- 0.15.
     #   - Is weight evolution also being used or not? Compatibility distance seems too large otherwise. -> TODO: Reread InfoNEAT paper.
     #   - How many training traces are being used?
+    #   - Are you training each network from scratch to evaluate it?
     #   - What selection method is being used? And what is Russian roulette selection?
     #       - Russian roulette selection: (Genetic Algorithm Attributes for Component Selection, Susan E. Carlson)
     #           Order pop by fitness, worst first
