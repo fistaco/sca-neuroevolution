@@ -9,7 +9,7 @@ import numpy as np
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras.layers import Concatenate, Dense, Flatten, LeakyReLU
-from tensorflow.python.ops.gen_nn_ops import avg_pool
+from tensorflow.python.ops.gen_array_ops import reverse
 
 from data_processing import (sample_traces, load_data, to_hw)
 from helpers import (get_pool_size, neat_nn_predictions, compute_fitness,
@@ -24,12 +24,14 @@ sgd_train = True
 avg_pooling = True
 pool_size = 2
 num_folds = 1
+x_val, y_val, pt_val = None, None, None
 
 
 class NeatSca:
     def __init__(self, pop_size, max_gens, config_filepath="./neat-config",
                  remote=False, parallelise=True, only_evolve_hidden=False,
-                 fs_neat=False, comp_thresh=None, tselect=False):
+                 fs_neat=False, comp_thresh=None, tselect=False,
+                 double_layer_init=False):
         global x, g_hw, avg_pooling, pool_size
 
         self.pop_size = pop_size
@@ -119,6 +121,7 @@ def evaluate_genome_fitness(genome, config):
         genome: A (genome_id, genome) tuple.
     """
     global x, y, pt, k, k_idx, g_hw, metric, sgd_train, avg_pooling, pool_size
+    global x_val, y_val, pt_val
 
     # Set seeds to ensure equal opportunity in SGD training
     tf.random.set_seed(77)
@@ -142,9 +145,14 @@ def evaluate_genome_fitness(genome, config):
         nn.compile(optimizer, loss_fn)
         history = nn.fit(x, y_cat, batch_size=100, epochs=30, verbose=0)
 
-    fit = float(
-        compute_fitness(nn, x, y, pt, metric, k, len(x), k_idx, g_hw)
-    )
+    if x_val is None:
+        fit = float(compute_fitness(
+            nn, x, y, pt, metric, k, len(x), k_idx, g_hw
+        ))
+    else:
+        fit = float(compute_fitness(
+            nn, x_val, y_val, pt_val, metric, k, len(x), k_idx, g_hw
+        ))
     return -fit
 
 
@@ -304,7 +312,25 @@ def construct_neat_config(input_size, hw, config_filepath, only_evolve_hidden,
     return config
 
 
-def draw_genome_nn(genome, label="", only_draw_hidden=True, n_outputs=256):
+def draw_common_genome_nn_structures(genomes, label=""):
+    """
+    Draws the common elements of NNs correspondging to a given list of genomes
+    by finding in- and output nodes that are connected to non-initial hidden
+    nodes.
+    """
+    pass
+
+
+def draw_simple_genome_nn(genome, label=""):
+    """
+    Draws the NN corresponding to the given `genome` by drawing all nodes and
+    connections except the ones that were present in the unevolved genome.
+    """
+    dot = graphviz.Digraph("NEAT NN visualisation", format="png")
+
+
+def draw_genome_nn(genome, label="", only_draw_hidden=True, n_outputs=256,
+                   draw_inp_to_hid=True, draw_new_hid_to_out=True):
     """
     Draws the NN corresponding to the given `genome` as a graph.
     """
@@ -314,19 +340,99 @@ def draw_genome_nn(genome, label="", only_draw_hidden=True, n_outputs=256):
     edges = genome.connections.items()
 
     if only_draw_hidden:
-        nodes = [n for n in nodes if n >= n_outputs]
-        edges = [
+        # Remove output nodes. Input nodes are not present in the first place.
+        nodes = {n for n in nodes if n >= n_outputs}
+
+        # Force the tail of each edge to be a hidden node
+        edges = set([
             ((i, o), c) for ((i, o), c) in edges
             if i >= n_outputs and o >= n_outputs and c.enabled
-        ]
+        ])
 
-    for node_id in nodes:
-        dot.node(str(node_id), str(node_id))
+        # Map each node to its connections
+        node_inc_conns = {n:[] for n in nodes}
+        node_out_conns = {n:[] for n in nodes}
+        for ((i, o), c) in genome.connections.items():
+            if not c.enabled:
+                continue
+            if o in node_inc_conns:
+                node_inc_conns[o].append(((i, o), c))
+            if i in node_out_conns:
+                node_out_conns[i].append(i)
+
+        # Remove nodes with only 1 incoming and outgoing connections
+        pass # TODO
+            
+        # Remove nodes and edges with only 1 incoming and outgoing connection
+
+        if draw_inp_to_hid:
+            init_hidden_nodes = []
+            inc_conns_per_node = {n:[] for n in nodes}
+
+            # Determine incoming inputs for each hidden node
+            for ((i, o), c) in genome.connections.items():
+                if not c.enabled:
+                    continue
+                if o in inc_conns_per_node:
+                    inc_conns_per_node[o].append(((i, o), c))
+
+            # Draw nodes/conns with a reasonable number of incoming conns
+            for n in inc_conns_per_node:
+                inc_conns = inc_conns_per_node[n]
+
+                if len(inc_conns) < 200:
+                    edges.update(inc_conns)
+                    for ((i, _), _) in inc_conns:
+                        if i < 0:
+                            nodes.add(i)  # Draw required input layer node
+                else:
+                    # Connect the "inputs" node to initial FC hid. nodes later
+                    init_hidden_nodes.append(n)
+        
+            if draw_new_hid_to_out:
+                # Draw connections from new hidden nodes to output nodes
+                for ((i, o), c) in genome.connections.items():
+                    if not c.enabled:
+                        continue
+                    if o < n_outputs and i >=0 and i not in init_hidden_nodes:
+                        edges.add(((i, o), c))
+
+        # Divide nodes in ranks for readability
+        node_subgraph(dot, nodes, hi=0, order=True, reverse_order=True)
+        node_subgraph(dot, init_hidden_nodes)
+        hid_layer_start = n_outputs + len(init_hidden_nodes)
+        node_subgraph(dot, nodes, lo=hid_layer_start, same_rank=False)
+        node_subgraph(dot, nodes, lo=0, hi=n_outputs, order=True)
 
     for ((i, j), _) in edges:
         dot.edge(str(i), str(j))
 
     dot.render(f"fig/neat-nn-vis-{label}", view=False)
+
+
+def node_subgraph(dot, nodes, lo=-np.inf, hi=np.inf, same_rank=True,
+                  order=False, reverse_order=False):
+    """
+    Constructs a subgraph in the given `dot` visualisation by adding IDs from
+    the given `nodes` list if they fall within `lo` <= n < `hi`.
+    """
+    with dot.subgraph() as s:
+        if same_rank:
+            s.attr(rank="same")
+
+        node_ids = []
+        for node_id in nodes:
+            if lo <= node_id < hi:
+                s.node(str(node_id), str(node_id))
+                node_ids.append(node_id)
+
+        if order:
+            s.attr("edge", style="invis")
+            s.attr(rankdir="LR")
+
+            node_ids = sorted(node_ids, reverse=reverse_order)
+            for i in range(len(node_ids) - 1):
+                s.edge(str(node_ids[i]), str(node_ids[i + 1]))
 
 
 def evolve_binary_nn(output_class, hw=False):
@@ -335,6 +441,11 @@ def evolve_binary_nn(output_class, hw=False):
     training data containing a 50-50 split of traces with and without the
     given output class as a label.
     """
+    # TODO:
+    # - Implement data splitting in set_global_data -> 3584 traces from one class and 3584 balanced traces from other classes
+    # - Ensure a good log-loss model can be trained by creating a custom keras model with 2x10 hidden nodes or smth
+    # - Set n_output_nodes to 1 with a custom argument
+    # - Determine n_gens and psize for the resources we have
     pass
 
 
@@ -352,7 +463,7 @@ def set_global_data(dataset_name, n_traces, subkey_idx, n_folds=1,
                     metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
                     balanced=False, use_sgd=True, use_avg_pooling=True,
                     pool_param=2, seed=None, balance_on_hw=False,
-                    noise=0.0, desync=0):
+                    noise=0.0, desync=0, n_valid_set=0):
     if seed:
         np.random.seed(seed)
 
@@ -362,16 +473,28 @@ def set_global_data(dataset_name, n_traces, subkey_idx, n_folds=1,
                      desync=desync)
 
     global x, y, pt, k, k_idx, g_hw, metric, num_folds, sgd_train, avg_pooling
-    global pool_size
+    global x_val, y_val, pt_val, pool_size
     x, y, pt, k = data[0], data[1], data[2], data[3]
     k_idx, g_hw, metric, num_folds = subkey_idx, hw, metric_type, n_folds
     sgd_train, avg_pooling, pool_size = use_sgd, use_avg_pooling, pool_param
 
     n_cls = 9 if load_hw_labels else 256
-    x, y, pt = sample_traces(n_traces, x, y, pt, n_cls, balanced=balanced)
+
+    if n_valid_set > 0:  # Sample a validation set
+        x, y, pt, x_val, y_val, pt_val = sample_traces(
+            n_traces, x, y, pt, n_cls, balanced=balanced, return_remainder=True
+        )
+        x_val, y_val, pt_val = sample_traces(
+            n_valid_set, x_val, y_val, pt_val, balanced=balanced
+        )
+    else:
+        x, y, pt = sample_traces(n_traces, x, y, pt, n_cls, balanced=balanced)
 
     if hw and not load_hw_labels:
         y = to_hw(y)
 
     if metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
         y = tf.keras.utils.to_categorical(y, (9 if hw else 256))
+
+        if n_valid_set > 0:
+            y_val = tf.keras.utils.to_categorical(y_val, (9 if hw else 256))
