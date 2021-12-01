@@ -123,7 +123,7 @@ def load_ascad_atk_variables(subkey_idx=2, for_cnns=True, scale=False):
 
 def load_prepared_ascad_vars(subkey_idx=2, scale=True, use_mlp=True,
                              remote=False, for_sgd=False, hw=False,
-                             n_train=45000, desync=0):
+                             n_train=50000, desync=0, return_valid_set=False):
     """
     Loads the ASCAD training and attack traces along with the metadata, applies
     reshaping for CNNs, scales the traces, and returns all relevant variables
@@ -234,13 +234,14 @@ def shuffle_data(*data_sets):
 
 
 def sample_traces(n_samples, x, y, z, n_classes=256, shuffle=True,
-                  balanced=False):
+                  balanced=False, return_remainder=False):
     """
     Samples `n_samples` of traces from the given sets of traces, labels, and
     plaintexts, optionally balancing them by label value.
     """
     if balanced:
-        return balanced_sample(n_samples, x, y, z, n_classes, shuffle)
+        return balanced_sample(n_samples, x, y, z, n_classes, shuffle,
+                               return_remainder)
     else:
         return sample_data(n_samples, x, y, z)
 
@@ -259,7 +260,8 @@ def sample_data(n_samples, *data_sets):
     return tup
 
 
-def balanced_sample(n_samples, x, y, z, n_classes=256, shuffle=True):
+def balanced_sample(n_samples, x, y, z, n_classes=256, shuffle=True,
+                    return_remainder=False):
     """
     Obtains a balanced sample of a given size from sets x, y, and z according
     to the first indices with occurrences of unique values in set y.
@@ -285,10 +287,45 @@ def balanced_sample(n_samples, x, y, z, n_classes=256, shuffle=True):
 
         uidxs = np.unique(y_m, return_index=True)[1][:-1]  # Ignore mask at -1
 
-    if shuffle:
-        return shuffle_data(x[idxs], y[idxs], z[idxs]) 
+    bal_x, bal_y, bal_z = x[idxs], y[idxs], z[idxs]
 
-    return (x[idxs], y[idxs], z[idxs])
+    if shuffle:
+        bal_x, bal_y, bal_z = shuffle_data(bal_x, bal_y, bal_z) 
+
+    if return_remainder:
+        rem_idxs = np.delete(np.arange(len(y)), idxs)
+        rem_x, rem_y, rem_z = x[rem_idxs], y[rem_idxs], z[rem_idxs]
+
+        return (bal_x, bal_y, bal_z, rem_x, rem_y, rem_z)
+
+    return (bal_x, bal_y, bal_z)
+
+
+def binary_clf_sample(x, y, z, target_cls, shuffle=True):
+    """
+    Returns the maximum number of available samples with `target_cls` as their
+    label and an equal number of random samples from other classes.
+
+    Note that the labels in `y` are also converted to be either 1 or 0 for
+    labels that do or don't correspond to `target_cls`, respectively.
+    """
+    # Obtain indices and data samples for the target class
+    cls_idxs = np.where(y == target_cls)[0]
+    n = len(cls_idxs)
+
+    # Prepare the full array slice
+    idxs = np.zeros(2*n, dtype=np.int32)
+    idxs[:n] = cls_idxs
+    idxs[n:] = np.random.choice(np.where(y != target_cls)[0], size=n)
+    x_b, y_b, z_b = x[idxs], y[idxs], z[idxs]
+
+    # Use binary encoding for the labels
+    y_b = np.where(y_b == target_cls, 1, 0)
+
+    if shuffle:
+        return shuffle_data(x_b, y_b, z_b) 
+
+    return (x_b, y_b, z_b)
 
 
 def train_test_split(x, y, train_proportion):
