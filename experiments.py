@@ -47,9 +47,8 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
                     dataset_name="ascad", only_evolve_hidden=False, noise=0.0,
                     desync=0, fs_neat=False, run_idx=-1, n_atk_folds=100,
                     comp_thresh=None, tselect=False, config_path=None,
-                    exp_name_suffix=""):
+                    double_layer_init=False, exp_name_suffix=""):
     subkey_idx = commonly_used_subkey_idx(dataset_name)
-    apply_noise = noise > 0.0
     (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
         load_data(dataset_name, hw=hw, remote=remote, noise_std=noise,
                   desync=desync)
@@ -65,9 +64,9 @@ def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
     # Train with NEAT
     neatsca = NeatSca(
         pop_size, max_gens, remote=remote, parallelise=parallelise,
-        only_evolve_hidden=only_evolve_hidden,
-        config_filepath=config_path, fs_neat=fs_neat,
-        comp_thresh=comp_thresh, tselect=tselect
+        only_evolve_hidden=only_evolve_hidden, config_filepath=config_path,
+        fs_neat=fs_neat, comp_thresh=comp_thresh, tselect=tselect,
+        double_layer_init=double_layer_init
     )
     (best_indiv, config) = neatsca.run(x_train, y_train, pt_train, k_train, hw)
 

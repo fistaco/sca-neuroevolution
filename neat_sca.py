@@ -43,7 +43,7 @@ class NeatSca:
         self.config = neat.Config(
             neat.DefaultGenome, neat.DefaultReproduction,
             neat.DefaultSpeciesSet, neat.DefaultStagnation, config_filepath,
-            only_evolve_hidden
+            only_evolve_hidden, double_layer_init
         )
         self.config.pop_size = pop_size
         self.config.genome_config.num_inputs = n_inputs
@@ -143,7 +143,7 @@ def evaluate_genome_fitness(genome, config):
         optimizer = keras.optimizers.Adam(learning_rate=5e-3)
         loss_fn = keras.losses.CategoricalCrossentropy()
         nn.compile(optimizer, loss_fn)
-        history = nn.fit(x, y_cat, batch_size=100, epochs=30, verbose=0)
+        history = nn.fit(x, y_cat, batch_size=100, epochs=50, verbose=0)
 
     if x_val is None:
         fit = float(compute_fitness(
@@ -151,7 +151,7 @@ def evaluate_genome_fitness(genome, config):
         ))
     else:
         fit = float(compute_fitness(
-            nn, x_val, y_val, pt_val, metric, k, len(x), k_idx, g_hw
+            nn, x_val, y_val, pt_val, metric, k, len(x_val), k_idx, g_hw
         ))
     return -fit
 
