@@ -22,6 +22,11 @@ from plotting import plot_gens_vs_fitness
 
 
 class GeneticAlgorithm:
+    """
+    Defines methods to run a genetic algorithm for the evolution of weights
+    for a neural network.
+    """
+
     def __init__(self, max_gens, pop_size, mut_power, mut_rate, crossover_rate,
                  mut_power_decay_rate, truncation_proportion, atk_set_size,
                  parallelise=False, apply_fitness_inheritance=False,
