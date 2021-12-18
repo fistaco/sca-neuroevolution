@@ -46,9 +46,7 @@ class CnnGenome:
         elif mut_type == 1:
             self.remove_random_layer(param_limits)
         elif mut_type == 2:
-            # TODO: Modify all parameters with equal probability within an interval
-            # specific to each parameter.
-            pass
+            self.modify_parameters(param_limits)
 
     def crossover(self, other):
         """
@@ -78,6 +76,17 @@ class CnnGenome:
                 del self.conv_blocks[randint(len(self.conv_blocks))]
         elif len(self.dense_layers) > limits.n_dense_layers_min:
             del self.dense_layers[randint(len(self.dense_layers))]
+
+    def modify_parameters(self, limits):
+        """
+        Modifies all genome parameters with equal probability within an
+        interval specific to each parameter.
+        """
+        n = len(self.conv_blocks)*6 + len(self.dense_layers)*1
+        if (len(self.conv_blocks)) == 0:
+            n += 1  # To modify self.pool_before_dense
+
+
 
     def phenotype(self):
         """
@@ -135,6 +144,14 @@ class ConvBlockGene:
             pool_stride=randint(limits.pool_stride_min, limits.pool_stride_max + 1)
         )
 
+    def mutate(self, mut_prob, limits):
+        """
+        Mutates all of this gene's parameters with probability `mut_prob`
+        within limits specific to each parameter.
+        """
+        if np.random.uniform() < mut_prob:
+            pass
+
     def clone(self):
         """
         Returns a duplicate clone (by value) of this gene.
@@ -177,9 +194,19 @@ class DenseLayerGene:
         return clone
 
 
-def apply_polynomial_mutation(x, lo, hi):
+def apply_polynomial_mutation(x, lo, hi, eta):
     """
     Applies polynomial mutation to the given numerical variable `x` according
     to the given extremum boundaries `lo` and `hi` and returns the result.
+
+    Polynomial mutation parameter `eta` determines the range in which a
+    variable may be mutated, with higher eta resulting in a smaller mutation
+    range.
     """
-    pass
+    u = np.random.uniform()
+    if u <= 0.5:
+        delta_l = (2*u)**(1/(1 + eta)) - 1
+        return x + delta_l * (x - lo)
+    else:
+        delta_r = 1 - (2*(1 - u))**(1/(1 + eta))
+        return x + delta_r * (hi - x)
