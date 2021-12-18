@@ -17,7 +17,7 @@ class CnnGenome:
         self.dense_layers = []
 
         # If there are no conv blocks, apply a possible pooling layer
-        self.pool_before_dense = None
+        self.pool_before_dense = False
 
     @staticmethod
     def random(limits):
@@ -31,6 +31,9 @@ class CnnGenome:
             genome.dense_layers.append(ConvBlockGene.random(limits))
         for _ in range(limits.n_dense_layers_min, limits.n_dense_layers_max + 1):
             genome.dense_layers.append(ConvBlockGene.random(limits))
+
+        if len(genome.conv_blocks) == 0:
+            genome.pool_before_dense = bool(randint(2))
 
         return genome
 
@@ -85,7 +88,14 @@ class CnnGenome:
         n = len(self.conv_blocks)*6 + len(self.dense_layers)*1
         if (len(self.conv_blocks)) == 0:
             n += 1  # To modify self.pool_before_dense
+            self.pool_before_dense = apply_boolean_mutation_with_prob(
+                self.pool_before_dense, 1/n)
+        mut_prob = 1/n
 
+        for conv_block in self.conv_blocks:
+            conv_block.mutate(mut_prob, limits)
+        for dense_layer in self.dense_layers:
+            dense_layer.mutate(mut_prob, limits)
 
 
     def phenotype(self):
@@ -112,6 +122,14 @@ class PoolType(Enum):
     """
     AVERAGE = 0
     MAX = 1
+
+    def mutate_with_prob(self, mut_prob):
+        """
+        Returns AVERAGE if the current pool type is MAX, and returns MAX if the
+        current pool type is AVERAGE.
+        """
+        return PoolType(not self.value) if np.random.uniform() < mut_prob \
+            else self
 
 
 class ConvBlockGene:
@@ -149,8 +167,18 @@ class ConvBlockGene:
         Mutates all of this gene's parameters with probability `mut_prob`
         within limits specific to each parameter.
         """
-        if np.random.uniform() < mut_prob:
-            pass
+        self.n_filters = apply_polynom_mutation_with_prob(
+            self.n_filters, limits.n_filters_min, limits.n_filters_max, mut_prob)
+        self.filter_size = apply_polynom_mutation_with_prob(
+            self.filter_size, limits.filter_size_min, limits.filter_size_max, mut_prob)
+
+        self.batch_norm = apply_boolean_mutation_with_prob(self.batch_norm, mut_prob)
+
+        self.pool_type = self.pool_type.mutate_with_prob(mut_prob)
+        self.pool_size = apply_polynom_mutation_with_prob(
+            self.pool_size, limits.pool_size_min, limits.pool_size_max, mut_prob)
+        self.pool_stride = apply_polynom_mutation_with_prob(
+            self.pool_stride, limits.pool_stride_min, limits.pool_stride_max, mut_prob)
 
     def clone(self):
         """
@@ -186,6 +214,16 @@ class DenseLayerGene:
 
         return DenseLayerGene(n_neurons)
 
+    def mutate(self, mut_prob, limits):
+        """
+        Mutates all of this gene's parameters with probability `mut_prob`
+        within limits specific to each parameter.
+        """
+        self.n_neurons = apply_polynom_mutation_with_prob(
+            self.n_neurons, limits.n_dense_neurons_min,
+            limits.n_dense_neurons_max, mut_prob
+        )
+
     def clone(self):
         """
         Returns a duplicate clone (by value) of this gene.
@@ -197,7 +235,7 @@ class DenseLayerGene:
 def apply_polynomial_mutation(x, lo, hi, eta):
     """
     Applies polynomial mutation to the given numerical variable `x` according
-    to the given extremum boundaries `lo` and `hi` and returns the result.
+    to the given boundaries `lo` and `hi` and returns the result.
 
     Polynomial mutation parameter `eta` determines the range in which a
     variable may be mutated, with higher eta resulting in a smaller mutation
@@ -210,3 +248,21 @@ def apply_polynomial_mutation(x, lo, hi, eta):
     else:
         delta_r = 1 - (2*(1 - u))**(1/(1 + eta))
         return x + delta_r * (hi - x)
+
+
+def apply_polynom_mutation_with_prob(x, lo, hi, eta, mut_prob):
+    """
+    Applies polynomial mutation to the given numerical variable `x` according
+    to the given boundaries `lo` and `hi` with probability `mut_prob`.
+    """
+    if np.random.uniform() < mut_prob:
+        apply_polynomial_mutation(x, lo, hi, eta)
+
+
+def apply_boolean_mutation_with_prob(b, mut_prob):
+    """
+    Sets bool `b` to the opposite of its current boolean value with probability
+    `mut_prob`.
+    """
+    if np.random.uniform() < mut_prob:
+        return not b
