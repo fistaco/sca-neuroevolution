@@ -2,9 +2,8 @@ from copy import deepcopy
 from enum import Enum
 
 from keras import Input, Model
-from keras.layers import Conv1D, Dense, Flatten
+from keras.layers import AveragePooling1D, MaxPooling1D, Conv1D, BatchNormalization, Dense, Flatten
 import numpy as np
-from numpy import random
 from numpy.random import randint
 
 from nascty_enums import CrossoverType, PoolType
@@ -193,12 +192,36 @@ class CnnGenome:
         for dense_layer in self.dense_layers:
             dense_layer.mutate(mut_prob, limits)
 
-    def phenotype(self):
+    def phenotype(self, hw=False):
         """
         Constructs and returns the phenotype corresponding to this genome, i.e.
         its expression as a Keras CNN model.
         """
-        pass
+        inputs = Input(shape=(700, 1))
+
+        for (i, gene) in enumerate(self.conv_blocks):
+            # The first layer call has to be on the `inputs` object. Note that there may be 0 conv blocks, resulting in 0 layer calls.
+            if i == 0:
+                x = Conv1D(gene.n_filters, gene.filter_size, kernel_initializer='he_uniform', activation='selu', padding='same', name=f'block{i}_conv')(inputs)
+            else:
+                x = Conv1D(gene.n_filters, gene.filter_size, kernel_initializer='he_uniform', activation='selu', padding='same', name=f'block{i}_conv')(x)
+
+            if gene.batch_norm:
+                x = BatchNormalization(name=f'block{i}_batchnorm')(x)
+            pool_func = AveragePooling1D if gene.pooling.pool_type == PoolType.AVERAGE else MaxPooling1D
+            x = pool_func(gene.pooling.pool_size, gene.pooling.pool_stride, name=f'block{i}_pool')(x)
+
+        # Call a pooling layer if there are no convolution blocks
+        if len(self.conv_blocks) == 0:
+            pool_func = AveragePooling1D if self.pool_before_dense.pool_type == PoolType.AVERAGE else MaxPooling1D
+            x = pool_func(self.pool_before_dense.pool_size, self.pool_before_dense.pool_stride, name=f'pre_dense_pool')(inputs)
+
+        for (i, gene) in enumerate(self.dense_layers):
+            x = Dense(gene.n_neurons, kernel_initializer=gene.weight_init, activation=gene.act_func, name=f'dense{i}')(x)
+
+        x = Dense(9 if hw else 256, activation='softmax', name='output_layer')
+
+        return Model(inputs, x)
 
     def clone(self):
         """
@@ -207,6 +230,7 @@ class CnnGenome:
         clone = CnnGenome()
         clone.conv_blocks = deepcopy(self.conv_blocks)
         clone.dense_layers = deepcopy(self.dense_layers)
+        clone.pool_before_dense = self.pool_before_dense.clone()
 
         return clone
 
@@ -221,9 +245,9 @@ class ConvBlockGene:
         self.n_filters = n_filters
         self.filter_size = filter_size
 
-        self.pooling = PoolingGene(pool_type, pool_size, pool_stride)
-
         self.batch_norm = batch_norm
+
+        self.pooling = PoolingGene(pool_type, pool_size, pool_stride)
 
     @staticmethod
     def random(limits):
@@ -250,9 +274,9 @@ class ConvBlockGene:
         self.filter_size = int(apply_polynom_mutation_with_prob(
             self.filter_size, limits.filter_size_min, limits.filter_size_max, mut_prob))
 
-        self.pooling.mutate(mut_prob, limits)
-
         self.batch_norm = apply_boolean_mutation_with_prob(self.batch_norm, mut_prob)
+
+        self.pooling.mutate(mut_prob, limits)
 
     def param_crossover(self, other):
         """
@@ -265,8 +289,8 @@ class ConvBlockGene:
 
         g0.n_filters, g1.n_filters = randomise_order(self.n_filters, other.n_filters)
         g0.filter_size, g1.filter_size = randomise_order(self.filter_size, other.filter_size)
-        g0.pooling, g1.pooling = self.pooling.crossover(other.pooling)
         g0.batch_norm, g1.batch_norm = randomise_order(self.batch_norm, other.batch_norm)
+        g0.pooling, g1.pooling = self.pooling.crossover(other.pooling)
 
         return (g0, g1)
 
@@ -274,11 +298,11 @@ class ConvBlockGene:
         """
         Returns a duplicate clone (by value) of this gene.
         """
-        clone = ConvBlockGene(
-            self.n_filters, self.filter_size, self.batch_norm, self.pool_type,
-            self.pool_size, self.pool_stride
+        return ConvBlockGene(
+            self.n_filters, self.filter_size, self.batch_norm,
+            self.pooling.pool_type, self.pooling.pool_size,
+            self.pooling.pool_stride
         )
-        return clone
 
 
 class PoolingGene:
@@ -331,6 +355,7 @@ class PoolingGene:
         """
         return PoolingGene(self.pool_type, self.pool_size, self.pool_stride)
 
+
 class DenseLayerGene:
     """
     A dense layer gene describing the parameters of a fully-connected neural
@@ -381,8 +406,7 @@ class DenseLayerGene:
         """
         Returns a duplicate clone (by value) of this gene.
         """
-        clone = DenseLayerGene(self.n_neurons)
-        return clone
+        return DenseLayerGene(self.n_neurons)
 
 
 def apply_polynomial_mutation(x, lo, hi, eta):
