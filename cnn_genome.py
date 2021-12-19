@@ -4,7 +4,10 @@ from enum import Enum
 from keras import Input, Model
 from keras.layers import Conv1D, Dense, Flatten
 import numpy as np
+from numpy import random
 from numpy.random import randint
+
+from nascty_enums import CrossoverType, PoolType
 
 
 class CnnGenome:
@@ -16,8 +19,9 @@ class CnnGenome:
         self.conv_blocks = []
         self.dense_layers = []
 
-        # If there are no conv blocks, apply a possible pooling layer
-        self.pool_before_dense = False
+        # A pooling layer is always encoded, but is only mutated or expressed
+        # in the phenotype if there are no conv blocks.
+        self.pool_before_dense = PoolingGene()
 
     @staticmethod
     def random(limits):
@@ -32,8 +36,7 @@ class CnnGenome:
         for _ in range(limits.n_dense_layers_min, limits.n_dense_layers_max + 1):
             genome.dense_layers.append(ConvBlockGene.random(limits))
 
-        if len(genome.conv_blocks) == 0:
-            genome.pool_before_dense = bool(randint(2))
+        genome.pool_before_dense = PoolingGene.random(limits)
 
         return genome
 
@@ -51,12 +54,106 @@ class CnnGenome:
         elif mut_type == 2:
             self.modify_parameters(param_limits)
 
-    def crossover(self, other):
+    def crossover(self, other, crossover_type):
         """
         Constructs a child through crossover with this genome and the given
-        `other` genome. This is achieved by TODO.
+        `other` genome according to the given `crossover_type`.
         """
-        pass
+        if crossover_type == CrossoverType.ONEPOINT:
+            return self.onepoint_crossover(other)
+        elif crossover_type == CrossoverType.PARAMETERWISE:
+            return self.parameterwise_crossover(other)
+
+    def onepoint_crossover(self, other):
+        """
+        Constructs two offspring genomes through one-point crossover separately
+        within the lists of convolution blocks and dense layers.
+        """
+        c0, c1 = CnnGenome(), CnnGenome()
+
+        c0.conv_blocks, c1.conv_blocks = \
+            self.op_layer_crossover(self.conv_blocks, other.conv_blocks)
+        c0.dense_layers, c1.dense_layers = \
+            self.op_layer_crossover(self.dense_layers, other.dense_layers)
+
+        c0.pool_before_dense, c1.pool_before_dense = \
+            randomise_order(self.pool_before_dense, other.pool_before_dense)
+
+        return (c0, c1)
+
+    def op_layer_crossover(self, p0_layers, p1_layers):
+        """
+        Returns two lists of layers constructed through one-point crossover on
+        two parents' respective layer lists.
+        """
+        p0_cutoff = self.onepoint_crossover_cutoff(p0_layers)
+        p1_cutoff = self.onepoint_crossover_cutoff(p1_layers)
+
+        c0_layers = p0_layers[:p0_cutoff] + p1_layers[p1_cutoff:]
+        c1_layers = p1_layers[:p1_cutoff] + p0_layers[p0_cutoff:]
+
+        return (c0_layers, c1_layers)
+
+    def onepoint_crossover_cutoff(self, layers):
+        """
+        Finds a random cutoff point for one-point crossover in the given
+        `layers` list.
+        """
+        if len(layers) == 0:
+            return 0
+
+        return randint(len(layers) + 1)  # Add 1 so we can cut at the end too
+
+    def parameterwise_crossover(self, other):
+        """
+        Constructs two offspring genomes through parameterwise crossover
+        between this genome and the `other` genome, where each parameter for
+        the first offspring is randomly taken from one of the parents, and the
+        same parameter for the other offspring is taken from the other.
+
+        This is achieved by first lining up each gene of the same type for
+        crossover. When the number of convolution or dense genes does not
+        match up, the remaining layers are appended to one of the offspring
+        unmodified.
+        """
+        c0, c1 = CnnGenome(), CnnGenome()
+
+        c0.conv_blocks, c1.conv_blocks = self.paramwise_co_on_layers(
+            self.conv_blocks, other.conv_blocks)
+        c0.dense_layers, c1.dense_layers = self.paramwise_co_on_layers(
+            self.dense_layers, other.dense_layers)
+
+        self.pool_before_dense, other.pool_before_dense = \
+            self.pool_before_dense.param_crossover(other.pool_before_dense)
+
+        return (c0, c1)
+
+    def paramwise_co_on_layers(self, p0_layers, p1_layers):
+        """
+        Creates two offspring lists by performing parameterwise crossover on
+        `p0_layers` and `p1_layers`, which are lists containing layers of the
+        same type.
+        """
+        c0_layers = []
+        c1_layers = []
+        n_min_layers = min(len(p0_layers), len(p1_layers))
+        n_max_layers = max(len(p0_layers), len(p1_layers))
+
+        for i in range(n_min_layers):
+            # Construct offspring o0 & o1 and incorporate them in the children
+            o0, o1 = p0_layers[i].param_crossover(p1_layers[i])
+            c0_layers.append(o0)
+            c1_layers.append(o1)
+
+        # Append remaining, unmatched layers as-is to the first child's layers
+        if len(p0_layers) > len(p1_layers):
+            for i in range(n_min_layers, n_max_layers):
+                c0_layers.append(p0_layers[i])
+        else:
+            for i in range(n_min_layers, n_max_layers):
+                c0_layers.append(p1_layers[i])
+
+        return (c0_layers, c1_layers)
 
     def add_random_layer(self, limits):
         """
@@ -87,16 +184,14 @@ class CnnGenome:
         """
         n = len(self.conv_blocks)*6 + len(self.dense_layers)*1
         if (len(self.conv_blocks)) == 0:
-            n += 1  # To modify self.pool_before_dense
-            self.pool_before_dense = apply_boolean_mutation_with_prob(
-                self.pool_before_dense, 1/n)
+            n += 3  # To modify self.pool_before_dense parameters
+            self.pool_before_dense.mutate(1/n, limits)
         mut_prob = 1/n
 
         for conv_block in self.conv_blocks:
             conv_block.mutate(mut_prob, limits)
         for dense_layer in self.dense_layers:
             dense_layer.mutate(mut_prob, limits)
-
 
     def phenotype(self):
         """
@@ -116,22 +211,6 @@ class CnnGenome:
         return clone
 
 
-class PoolType(Enum):
-    """
-    The type of pooling layer used for some neural network.
-    """
-    AVERAGE = 0
-    MAX = 1
-
-    def mutate_with_prob(self, mut_prob):
-        """
-        Returns AVERAGE if the current pool type is MAX, and returns MAX if the
-        current pool type is AVERAGE.
-        """
-        return PoolType(not self.value) if np.random.uniform() < mut_prob \
-            else self
-
-
 class ConvBlockGene:
     """
     A convolutional block gene describing a convolutional filter, an optional
@@ -142,11 +221,9 @@ class ConvBlockGene:
         self.n_filters = n_filters
         self.filter_size = filter_size
 
-        self.batch_norm = batch_norm
+        self.pooling = PoolingGene(pool_type, pool_size, pool_stride)
 
-        self.pool_type = pool_type
-        self.pool_size = pool_size
-        self.pool_stride = pool_stride
+        self.batch_norm = batch_norm
 
     @staticmethod
     def random(limits):
@@ -158,6 +235,7 @@ class ConvBlockGene:
             n_filters=randint(limits.n_filters_min, limits.n_filters_max + 1),
             filter_size=randint(limits.filter_size_min, limits.filter_size_max + 1),
             batch_norm=randint(2),
+            pool_type=PoolType.random(),
             pool_size=randint(limits.pool_size_min, limits.pool_size_max + 1),
             pool_stride=randint(limits.pool_stride_min, limits.pool_stride_max + 1)
         )
@@ -167,18 +245,30 @@ class ConvBlockGene:
         Mutates all of this gene's parameters with probability `mut_prob`
         within limits specific to each parameter.
         """
-        self.n_filters = apply_polynom_mutation_with_prob(
-            self.n_filters, limits.n_filters_min, limits.n_filters_max, mut_prob)
-        self.filter_size = apply_polynom_mutation_with_prob(
-            self.filter_size, limits.filter_size_min, limits.filter_size_max, mut_prob)
+        self.n_filters = int(apply_polynom_mutation_with_prob(
+            self.n_filters, limits.n_filters_min, limits.n_filters_max, mut_prob))
+        self.filter_size = int(apply_polynom_mutation_with_prob(
+            self.filter_size, limits.filter_size_min, limits.filter_size_max, mut_prob))
+
+        self.pooling.mutate(mut_prob, limits)
 
         self.batch_norm = apply_boolean_mutation_with_prob(self.batch_norm, mut_prob)
 
-        self.pool_type = self.pool_type.mutate_with_prob(mut_prob)
-        self.pool_size = apply_polynom_mutation_with_prob(
-            self.pool_size, limits.pool_size_min, limits.pool_size_max, mut_prob)
-        self.pool_stride = apply_polynom_mutation_with_prob(
-            self.pool_stride, limits.pool_stride_min, limits.pool_stride_max, mut_prob)
+    def param_crossover(self, other):
+        """
+        Constructs two offspring genes through crossover on this and the
+        `other` ConvBlockGene by iterating over each parameter, randomly
+        setting one child's parameter value to that of one parent and setting
+        the other child's value to that of the other parent.
+        """
+        g0, g1 = ConvBlockGene(), ConvBlockGene()
+
+        g0.n_filters, g1.n_filters = randomise_order(self.n_filters, other.n_filters)
+        g0.filter_size, g1.filter_size = randomise_order(self.filter_size, other.filter_size)
+        g0.pooling, g1.pooling = self.pooling.crossover(other.pooling)
+        g0.batch_norm, g1.batch_norm = randomise_order(self.batch_norm, other.batch_norm)
+
+        return (g0, g1)
 
     def clone(self):
         """
@@ -190,6 +280,56 @@ class ConvBlockGene:
         )
         return clone
 
+
+class PoolingGene:
+    """
+    A pooling layer gene describing the parameter of a pooling layer used in a
+    neural network.
+    """
+    def __init__(self, pool_type=PoolType.AVERAGE, pool_size=2, pool_stride=2):
+        self.pool_type = pool_type
+        self.pool_size = pool_size
+        self.pool_stride = pool_stride
+
+    @staticmethod
+    def random(limits):
+        return PoolingGene(
+            pool_type=PoolType.random(),
+            pool_size=randint(limits.pool_size_min, limits.pool_size_max + 1),
+            pool_stride=randint(limits.pool_stride_min, limits.pool_stride_max + 1)
+        )
+
+    def mutate(self, mut_prob, limits):
+        """
+        Mutates all of this gene's parameters with probability `mut_prob`
+        within limits specific to each parameter.
+        """
+        self.pool_type = self.pool_type.mutate_with_prob(mut_prob)
+        self.pool_size = int(apply_polynom_mutation_with_prob(
+            self.pool_size, limits.pool_size_min, limits.pool_size_max, mut_prob))
+        self.pool_stride = int(apply_polynom_mutation_with_prob(
+            self.pool_stride, limits.pool_stride_min, limits.pool_stride_max, mut_prob))
+
+    def param_crossover(self, other):
+        """
+        Constructs two offspring genes through crossover on this and the
+        `other` PoolingGene by iterating over each parameter, randomly setting
+        one child's parameter value to that of one parent and setting the other
+        child's value to that of the other parent.
+        """
+        g0, g1 = PoolingGene(), PoolingGene()
+
+        g0.pool_type, g1.pool_type = randomise_order(self.pool_type, other.pool_type)
+        g0.pool_size, g1.pool_size = randomise_order(self.pool_size, other.pool_size)
+        g0.pool_stride, g1.pool_stride = randomise_order(self.pool_stride, other.pool_stride)
+
+        return (g0, g1)
+
+    def clone(self):
+        """
+        Returns a duplicate clone (by value) of this gene.
+        """
+        return PoolingGene(self.pool_type, self.pool_size, self.pool_stride)
 
 class DenseLayerGene:
     """
@@ -219,10 +359,23 @@ class DenseLayerGene:
         Mutates all of this gene's parameters with probability `mut_prob`
         within limits specific to each parameter.
         """
-        self.n_neurons = apply_polynom_mutation_with_prob(
+        self.n_neurons = int(apply_polynom_mutation_with_prob(
             self.n_neurons, limits.n_dense_neurons_min,
             limits.n_dense_neurons_max, mut_prob
-        )
+        ))
+
+    def param_crossover(self, other):
+        """
+        Constructs two offspring genes through crossover on this and the
+        `other` DenseLayergene by iterating over each parameter, randomly
+        setting one child's parameter value to that of one parent and setting
+        the other child's value to that of the other parent.
+        """
+        g0, g1 = DenseLayerGene(), DenseLayerGene()
+
+        g0.n_neurons, g1.n_neurons = randomise_order(self.n_neurons, other.n_neurons)
+
+        return (g0, g1)
 
     def clone(self):
         """
@@ -266,3 +419,10 @@ def apply_boolean_mutation_with_prob(b, mut_prob):
     """
     if np.random.uniform() < mut_prob:
         return not b
+
+
+def randomise_order(x0, x1):
+    """
+    Returns a tuple of given variables `x0` and `x1` in random order.
+    """
+    return (x0, x1) if randint(2) == 0 else (x1, x0)
