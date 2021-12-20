@@ -6,14 +6,15 @@ import random as rand
 import numpy as np
 import tensorflow as tf
 
+from cnn_genome import CnnGenome
 from data_processing import sample_traces
 from helpers import (compute_fitness, calc_max_fitness, calc_min_fitness,
                      get_pool_size, ga_stagnation)
 from metrics import MetricType
 import models
 from models import train
+from nascty_enums import CrossoverType
 from nascty_param_limits import NasctyParamLimits
-from cnn_genome import CnnGenome
 from params import *
 from plotting import plot_gens_vs_fitness
 
@@ -25,19 +26,19 @@ class NasctyCnnsGeneticAlgorithm:
     that evolves the parameters of CNNs for side-channel analysis.
     """
 
-    def __init__(self, max_gens, pop_size, mut_rate, crossover_rate, atk_set_size,
-                 parallelise=False, select_fun="tournament", t_size=3,
+    def __init__(self, max_gens, pop_size, atk_set_size, parallelise=False,
+                 select_fun="tournament", t_size=3,
+                 crossover_type=CrossoverType.ONEPOINT,
                  metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
                  truncation_proportion=1.0, n_atk_folds=1, remote=False):
         self.max_gens = max_gens
         self.pop_size = pop_size
         self.full_pop_size = pop_size*2  # Pop size when including offspring
-        self.mut_rate = mut_rate
-        self.crossover_rate = crossover_rate
         self.truncation_proportion = truncation_proportion
         self.atk_set_size = atk_set_size
         self.n_atk_folds = n_atk_folds
         self.parallelise = parallelise
+        self.crossover_type = crossover_type
         self.metric_type = metric_type
 
         # Maintain the population and all offspring in self.population
@@ -116,7 +117,9 @@ class NasctyCnnsGeneticAlgorithm:
 
             # Rest of GA main loop, i.e. selection & offspring production
             self.population[:self.pop_size] = self.selection_method()
-            self.population[self.pop_size:] = self.produce_offpsring()
+            self.population[self.pop_size:] = self.produce_offpsring(
+                self.param_limits, self.crossover_type
+            )
 
             # Track useful information
             self.best_fitness_per_gen[gen] = best_fitness
@@ -278,21 +281,20 @@ class NasctyCnnsGeneticAlgorithm:
 
         return winner.clone()
 
-    def produce_offpsring(self):
+    def produce_offpsring(self, param_limits, co_type=CrossoverType.ONEPOINT):
         """
-        Produces and returns offspring by applying either mutation or crossover
-        on each individual, doubling the total population size.
+        Produces and returns offspring by applying both crossover and mutation
+        with two random parents until the total population size has doubled.
         """
         offspring = np.empty(self.pop_size, dtype=object)
-        for i in range(self.pop_size):
-            parent0 = self.population[i]
+        for i in range(0, self.pop_size, 2):
+            parent0 = np.random.choice(self.population[:self.pop_size])
+            parent1 = np.random.choice(self.population[:self.pop_size])
 
-            if np.random.uniform() < self.crossover_rate:
-                parent1 = np.random.choice(self.population[:self.pop_size])
-                offspring[i] = parent0.crossover(parent1)
-            else:
-                offspring[i] = parent0.mutate()
-        
+            offspring[i], offspring[i+1] = parent0.crossover(parent1, co_type)
+            offspring[i].mutate(param_limits)
+            offspring[i+1].mutate(param_limits)
+
         return offspring
 
     def get_results(self):
