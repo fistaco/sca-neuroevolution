@@ -16,7 +16,6 @@ from models import train
 from nascty_enums import CrossoverType
 from nascty_param_limits import NasctyParamLimits
 from params import *
-from plotting import plot_gens_vs_fitness
 
 
 class NasctyCnnsGeneticAlgorithm:
@@ -26,8 +25,8 @@ class NasctyCnnsGeneticAlgorithm:
     that evolves the parameters of CNNs for side-channel analysis.
     """
 
-    def __init__(self, max_gens, pop_size, atk_set_size, parallelise=False,
-                 select_fun="tournament", t_size=3,
+    def __init__(self, max_gens, pop_size, parallelise=False,
+                 select_fun="tournament", t_size=3, polynom_mutation_eta=20,
                  crossover_type=CrossoverType.ONEPOINT,
                  metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
                  truncation_proportion=1.0, n_atk_folds=1, remote=False):
@@ -35,9 +34,9 @@ class NasctyCnnsGeneticAlgorithm:
         self.pop_size = pop_size
         self.full_pop_size = pop_size*2  # Pop size when including offspring
         self.truncation_proportion = truncation_proportion
-        self.atk_set_size = atk_set_size
         self.n_atk_folds = n_atk_folds
         self.parallelise = parallelise
+        self.polynom_mutation_eta = polynom_mutation_eta
         self.crossover_type = crossover_type
         self.metric_type = metric_type
 
@@ -98,7 +97,7 @@ class NasctyCnnsGeneticAlgorithm:
         best_individual = None
 
         while gen < self.max_gens and best_fitness > self.min_fitness:
-            seed = gen if self.n_atk_folds > 1 and not static_seed else 77
+            seed = gen if not static_seed else 77
             np.random.seed(seed)
 
             # if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
@@ -156,13 +155,13 @@ class NasctyCnnsGeneticAlgorithm:
                 (
                     self.population[i], x_train, y_train, pt_train,
                     x_valid, y_valid, pt_valid, true_subkey, subkey_idx,
-                    self.metric_type, self.atk_set_size, self.n_atk_folds,
-                    seed, shuffle, balanced, hw
+                    self.metric_type, self.n_atk_folds, seed, shuffle,
+                    balanced, hw
                 )
                 for i in range(len(self.population))
             ]
             # Run fitness evaluations in parallel
-            fitnesses = self.pool.starmap(multifold_fitness_eval, argss)
+            fitnesses = self.pool.starmap(evaluate_nascty_fitness, argss)
 
             # Update the individuals' fitness values
             for i in range(len(self.population)):
@@ -170,11 +169,10 @@ class NasctyCnnsGeneticAlgorithm:
         else:
             # Run fitness evaluations sequentially
             for (i, genome) in enumerate(self.population):
-                genome.fitness = self.fitnesses[i] = multifold_fitness_eval(
+                genome.fitness = self.fitnesses[i] = evaluate_nascty_fitness(
                     genome, x_train, y_train, pt_train, x_valid, y_valid,
                     pt_valid, true_subkey, subkey_idx, self.metric_type,
-                    self.atk_set_size, self.n_atk_folds, seed, shuffle,
-                    balanced, hw
+                    self.n_atk_folds, seed, shuffle, balanced, hw
                 )
 
     def roulette_wheel_selection(self, n_elites=1):
@@ -292,8 +290,8 @@ class NasctyCnnsGeneticAlgorithm:
             parent1 = np.random.choice(self.population[:self.pop_size])
 
             offspring[i], offspring[i+1] = parent0.crossover(parent1, co_type)
-            offspring[i].mutate(param_limits)
-            offspring[i+1].mutate(param_limits)
+            offspring[i].mutate(param_limits, self.polynom_mutation_eta)
+            offspring[i+1].mutate(param_limits, self.polynom_mutation_eta)
 
         return offspring
 
@@ -364,37 +362,6 @@ def evaluate_nascty_fitness(genome, x_train, y_train, pt_train, x_valid,
     return compute_fitness(
         nn, x_valid, y_valid, pt_valid, metric_type, true_subkey, len(x_valid),
         subkey_idx, hw, preds=None, n_folds=n_folds
-    )
-
-
-def multifold_fitness_eval(weights, x_atk, y_atk, pt_atk, true_subkey,
-                           subkey_idx, metric_type, atk_set_size, n_folds,
-                           seed, shuffle=True, balanced=True, hw=False):
-    """
-    Evaluates the fitness of an individual by using its weights to construct a
-    new NN, which is used to execute an SCA on the given data.
-
-    Returns:
-        The key rank obtained with the SCA.
-    """
-    np.random.seed(seed)  # Ensure each indiv is evaluated on the same folds
-
-    nn = models.NN_LOAD_FUNC(*models.NN_LOAD_ARGS)
-    nn.set_weights(weights)
-
-    n_classes = 9 if hw else 256
-
-    x, y, pt = sample_traces(
-        atk_set_size, x_atk, y_atk, pt_atk, n_classes, shuffle=shuffle,
-        balanced=balanced
-    )
-
-    if metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
-        y = tf.keras.utils.to_categorical(y, (9 if hw else 256))
-
-    return compute_fitness(
-        nn, x, y, pt, metric_type, true_subkey, atk_set_size, subkey_idx, hw,
-        preds=None, n_folds=n_folds
     )
 
 
