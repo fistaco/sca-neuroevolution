@@ -33,13 +33,13 @@ class CnnGenome:
         for _ in range(limits.n_conv_blocks_min, limits.n_conv_blocks_max + 1):
             genome.dense_layers.append(ConvBlockGene.random(limits))
         for _ in range(limits.n_dense_layers_min, limits.n_dense_layers_max + 1):
-            genome.dense_layers.append(ConvBlockGene.random(limits))
+            genome.dense_layers.append(DenseLayerGene.random(limits))
 
         genome.pool_before_dense = PoolingGene.random(limits)
 
         return genome
 
-    def mutate(self, param_limits):
+    def mutate(self, param_limits, polynom_mutation_eta=20):
         """
         Mutates this genome by uniformly randomly adding a layer,
         removing a layer, or modifying all numerical parameters with
@@ -51,7 +51,7 @@ class CnnGenome:
         elif mut_type == 1:
             self.remove_random_layer(param_limits)
         elif mut_type == 2:
-            self.modify_parameters(param_limits)
+            self.modify_parameters(param_limits, polynom_mutation_eta)
 
     def crossover(self, other, crossover_type):
         """
@@ -176,7 +176,7 @@ class CnnGenome:
         elif len(self.dense_layers) > limits.n_dense_layers_min:
             del self.dense_layers[randint(len(self.dense_layers))]
 
-    def modify_parameters(self, limits):
+    def modify_parameters(self, limits, polynom_mutation_eta=20):
         """
         Modifies all genome parameters with equal probability within an
         interval specific to each parameter.
@@ -188,9 +188,9 @@ class CnnGenome:
         mut_prob = 1/n
 
         for conv_block in self.conv_blocks:
-            conv_block.mutate(mut_prob, limits)
+            conv_block.mutate(mut_prob, limits, eta=polynom_mutation_eta)
         for dense_layer in self.dense_layers:
-            dense_layer.mutate(mut_prob, limits)
+            dense_layer.mutate(mut_prob, limits, eta=polynom_mutation_eta)
 
     def phenotype(self, hw=False):
         """
@@ -215,6 +215,8 @@ class CnnGenome:
         if len(self.conv_blocks) == 0:
             pool_func = AveragePooling1D if self.pool_before_dense.pool_type == PoolType.AVERAGE else MaxPooling1D
             x = pool_func(self.pool_before_dense.pool_size, self.pool_before_dense.pool_stride, name=f'pre_dense_pool')(inputs)
+
+        x = Flatten()(x)
 
         for (i, gene) in enumerate(self.dense_layers):
             x = Dense(gene.n_neurons, kernel_initializer=gene.weight_init, activation=gene.act_func, name=f'dense{i}')(x)
@@ -264,19 +266,19 @@ class ConvBlockGene:
             pool_stride=randint(limits.pool_stride_min, limits.pool_stride_max + 1)
         )
 
-    def mutate(self, mut_prob, limits):
+    def mutate(self, mut_prob, limits, eta=20):
         """
         Mutates all of this gene's parameters with probability `mut_prob`
         within limits specific to each parameter.
         """
         self.n_filters = int(apply_polynom_mutation_with_prob(
-            self.n_filters, limits.n_filters_min, limits.n_filters_max, mut_prob))
+            self.n_filters, limits.n_filters_min, limits.n_filters_max, eta, mut_prob))
         self.filter_size = int(apply_polynom_mutation_with_prob(
-            self.filter_size, limits.filter_size_min, limits.filter_size_max, mut_prob))
+            self.filter_size, limits.filter_size_min, limits.filter_size_max, eta, mut_prob))
 
         self.batch_norm = apply_boolean_mutation_with_prob(self.batch_norm, mut_prob)
 
-        self.pooling.mutate(mut_prob, limits)
+        self.pooling.mutate(mut_prob, limits, eta)
 
     def param_crossover(self, other):
         """
@@ -323,16 +325,16 @@ class PoolingGene:
             pool_stride=randint(limits.pool_stride_min, limits.pool_stride_max + 1)
         )
 
-    def mutate(self, mut_prob, limits):
+    def mutate(self, mut_prob, limits, eta=20):
         """
         Mutates all of this gene's parameters with probability `mut_prob`
         within limits specific to each parameter.
         """
         self.pool_type = self.pool_type.mutate_with_prob(mut_prob)
         self.pool_size = int(apply_polynom_mutation_with_prob(
-            self.pool_size, limits.pool_size_min, limits.pool_size_max, mut_prob))
+            self.pool_size, limits.pool_size_min, limits.pool_size_max, eta, mut_prob))
         self.pool_stride = int(apply_polynom_mutation_with_prob(
-            self.pool_stride, limits.pool_stride_min, limits.pool_stride_max, mut_prob))
+            self.pool_stride, limits.pool_stride_min, limits.pool_stride_max, eta, mut_prob))
 
     def param_crossover(self, other):
         """
@@ -379,14 +381,14 @@ class DenseLayerGene:
 
         return DenseLayerGene(n_neurons)
 
-    def mutate(self, mut_prob, limits):
+    def mutate(self, mut_prob, limits, eta=20):
         """
         Mutates all of this gene's parameters with probability `mut_prob`
         within limits specific to each parameter.
         """
         self.n_neurons = int(apply_polynom_mutation_with_prob(
             self.n_neurons, limits.n_dense_neurons_min,
-            limits.n_dense_neurons_max, mut_prob
+            limits.n_dense_neurons_max, eta, mut_prob
         ))
 
     def param_crossover(self, other):
