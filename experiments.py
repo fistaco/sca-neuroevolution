@@ -6,6 +6,7 @@ from time import time
 
 import neat
 import numpy as np
+from numpy.lib.polynomial import poly
 import tensorflow as tf
 from tensorflow import keras
 from tensorflow.python.ops.gen_nn_ops import data_format_dim_map
@@ -24,7 +25,7 @@ from helpers import (compute_fold_keyranks, compute_mem_req,
                      gen_ga_grid_search_arg_lists, kfold_mean_key_ranks,
                      label_to_subkey, kfold_mean_inc_kr,
                      gen_mini_grid_search_arg_lists, neat_nn_predictions,
-                     gen_neat_exp_name)
+                     gen_neat_exp_name, gen_nascty_exp_name)
 from metrics import MetricType, keyrank
 import models
 from models import (build_small_cnn_ascad, train, build_small_mlp_ascad,
@@ -34,12 +35,82 @@ from models import (build_small_cnn_ascad, train, build_small_mlp_ascad,
                     small_mlp_cw, mini_mlp_cw, small_mlp_cw_func, train,
                     build_single_hidden_layer_mlp_ascad, random_ascad_neat_mlp,
                     build_variable_small_mlp_ascad)
+from nascty_cnns import NasctyCnnsGeneticAlgorithm
+from nascty_enums import CrossoverType
 from neat_sca import NeatSca, genome_to_keras_model, draw_genome_nn
 from nn_genome import NeuralNetworkGenome
 from plotting import (plot_gens_vs_fitness, plot_n_traces_vs_key_rank,
                       plot_var_vs_key_rank, plot_2d, plot_3d,
                       nn_weights_heatmaps)
 from result_processing import ResultCategory, filter_df
+
+
+def nascty_cnns_experiment(
+    run_idx=0, max_gens=100, pop_size=100, parallelise=False, remote=False,
+    hw=False, select_fun="tournament", t_size=3, polynom_mutation_eta=20,
+    crossover_type=CrossoverType.ONEPOINT,
+    metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
+    truncation_proportion=1.0, n_atk_folds=1, noise=0.0, desync=0):
+    """
+    Runs a NASCTY CNNs genetic algorithm experiment on the ASCAD data set
+    and stores the results in a directory specific to this experiment.
+    """
+    np.random.seed(77)
+
+    subkey_idx = 2
+    (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk) = \
+        load_data("ascad", hw=hw, remote=remote, noise_std=noise,
+                  desync=desync)
+
+    # Obtain balanced training and validation sets
+    n_classes = 9 if hw else 256
+    x_train, y_train, pt_train, x_val, y_val, pt_val = sample_traces(
+        35584, x_train, y_train, pt_train, n_classes, balanced=True,
+        return_remainder=True
+    )
+    x_val, y_val, pt_val = sample_traces(
+        3840, x_val, y_val, pt_val, n_classes, balanced=True
+    )
+
+    exp_name = gen_nascty_exp_name(
+        pop_size, max_gens, hw, polynom_mutation_eta, crossover_type,
+        truncation_proportion, noise=noise, desync=desync
+    )
+
+    nascty_ga = NasctyCnnsGeneticAlgorithm(
+        max_gens, pop_size, parallelise, select_fun, t_size,
+        polynom_mutation_eta, crossover_type, metric_type,
+        truncation_proportion, n_atk_folds, remote
+    )
+
+    shuffle = n_atk_folds > 1
+    best_indiv = nascty_ga.run(
+        x_train, y_train, pt_train, x_val, y_val, pt_val, k_train, subkey_idx,
+        shuffle, balanced=True, hw=hw, static_seed=False 
+    )
+
+    nn = best_indiv.phenotype(hw=hw)
+
+    print("Commencing evaluation on attack set.")
+    y_pred_probs = nn.predict(x_atk)
+    (inc_kr, mean_krs) = kfold_mean_inc_kr(
+        y_pred_probs, pt_atk, y_atk, k_atk, n_atk_folds, subkey_idx, remote,
+        parallelise=parallelise, hw=hw, return_krs=True
+    )
+
+    # Save results in the proper experiment directory if run_idx is specified
+    if run_idx >= 0:
+        dir_path = f"nascty_results/{exp_name}"
+        if not os.path.exists(dir_path):
+            os.mkdir(dir_path)
+
+        filepath = f"{dir_path}/run{run_idx}_results.pickle"
+
+        (_, best_fitness_per_gen, top_ten) = nascty_ga.get_results()
+        results = (best_indiv, best_fitness_per_gen, top_ten, mean_krs, inc_kr)
+
+        with open(filepath, "wb") as f:
+            pickle.dump(results, f)
 
 
 def neat_experiment(pop_size=4, max_gens=10, remote=True, hw=True,
