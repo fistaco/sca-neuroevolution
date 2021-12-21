@@ -30,9 +30,9 @@ class CnnGenome:
         """
         genome = CnnGenome()
 
-        for _ in range(limits.n_conv_blocks_min, limits.n_conv_blocks_max + 1):
-            genome.dense_layers.append(ConvBlockGene.random(limits))
-        for _ in range(limits.n_dense_layers_min, limits.n_dense_layers_max + 1):
+        for _ in range(randint(limits.n_conv_blocks_min, limits.n_conv_blocks_max + 1)):
+            genome.conv_blocks.append(ConvBlockGene.random(limits))
+        for _ in range(randint(limits.n_dense_layers_min, limits.n_dense_layers_max + 1)):
             genome.dense_layers.append(DenseLayerGene.random(limits))
 
         genome.pool_before_dense = PoolingGene.random(limits)
