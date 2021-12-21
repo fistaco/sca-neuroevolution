@@ -480,6 +480,21 @@ def gen_neat_exp_name_suffix(n_train, n_valid, custom_suffix=""):
     return f"{n_train}-traintraces-{n_valid}-val{suffix_str}"
 
 
+def gen_nascty_exp_name(pop_size, max_gens, hw, polynom_mutation_eta,
+                        crossover_type, truncation_proportion, noise=0.0,
+                        desync=0):
+    """
+    Generates an experiment name for a NASCTY CNNs GA run using the given
+    arguments.
+    """
+    lm_str = "hw" if hw else "id"
+    co_str = f"{crossover_type.name.lower()}_co"
+
+    return f"nascty-ps{pop_size}-{max_gens}gens-{lm_str}-" + \
+           f"eta{polynom_mutation_eta}-{co_str}-tp{truncation_proportion}-" + \
+           f"noise{noise}-desync{desync}"
+
+
 def calc_max_fitness(metric_type):
     """
     Returns the maximum fitness based on the given metric type.
