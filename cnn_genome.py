@@ -244,7 +244,7 @@ class CnnGenome:
             f"""
             Genome summary:
             {len(self.conv_blocks)} convolution blocks
-            {len(self.conv_blocks)} dense layers
+            {len(self.dense_layers)} dense layers
             """
         )
 
@@ -256,7 +256,7 @@ class CnnGenome:
             print("="*30)
             conv_block.prettyprint(i)
 
-        for (i, dense_layer) in enumerate(self.dense_layer):
+        for (i, dense_layer) in enumerate(self.dense_layers):
             print("="*30)
             dense_layer.prettyprint(i)
 
@@ -334,14 +334,9 @@ class ConvBlockGene:
         """
         Prints a formatted string of this gene's parameters.
         """
-        print(
-            f"""
-            Conv block {block_nr}:
-            {self.n_filters} filters
-            filter size {self.filter_size}
-            {"BatchNorm" if self.batch_norm else "No BatchNorm"}
-            """
-        )
+        bn_str = "BatchNorm" if self.batch_norm else "No BatchNorm"
+        print(f"Conv block {block_nr}:\n{self.n_filters} filters\n" + \
+              f"filter size {self.filter_size}\n{bn_str}")
         self.pooling.prettyprint()
 
 
@@ -399,8 +394,8 @@ class PoolingGene:
         """
         Prints a formatted string of this gene's parameters.
         """
-        print(f"{self.pool_type.name.capitalize()}Pooling, " + \
-              f"size = {self.pool_size}, stride = {self.pool_stride}")
+        print(f"{self.pool_type.name.capitalize()}Pooling\n" + \
+              f"size = {self.pool_size}\nstride = {self.pool_stride}")
 
 
 class DenseLayerGene:
@@ -459,12 +454,7 @@ class DenseLayerGene:
         """
         Prints a formatted string of this gene's parameters.
         """
-        print(
-            f"""
-            Dense layer {layer_nr}:
-            {self.n_neurons} neurons
-            """
-        )
+        print(f"Dense layer {layer_nr}:\n{self.n_neurons} neurons")
 
 
 def apply_polynomial_mutation(x, lo, hi, eta):
@@ -491,7 +481,7 @@ def apply_polynom_mutation_with_prob(x, lo, hi, eta, mut_prob):
     to the given boundaries `lo` and `hi` with probability `mut_prob`.
     """
     if np.random.uniform() < mut_prob:
-        apply_polynomial_mutation(x, lo, hi, eta)
+        return apply_polynomial_mutation(x, lo, hi, eta)
 
 
 def apply_boolean_mutation_with_prob(b, mut_prob):
