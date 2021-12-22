@@ -161,9 +161,9 @@ class CnnGenome:
         """
         if randint(2) == 0:
             if len(self.conv_blocks) < limits.n_conv_blocks_max:
-                self.conv_blocks.append(ConvBlockGene.random())
+                self.conv_blocks.append(ConvBlockGene.random(limits))
         elif len(self.dense_layers) < limits.n_dense_layers_max:
-            self.dense_layers.append(DenseLayerGene.random())
+            self.dense_layers.append(DenseLayerGene.random(limits))
 
     def remove_random_layer(self, limits):
         """
