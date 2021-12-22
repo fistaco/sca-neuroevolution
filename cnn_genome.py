@@ -236,6 +236,30 @@ class CnnGenome:
 
         return clone
 
+    def prettyprint(self):
+        """
+        Prints a formatted string of this genome's parameters.
+        """
+        print(
+            f"""
+            Genome summary:
+            {len(self.conv_blocks)} convolution blocks
+            {len(self.conv_blocks)} dense layers
+            """
+        )
+
+        if len(self.conv_blocks) == 0:
+            print("="*30)
+            self.pool_before_dense.prettyprint()
+
+        for (i, conv_block) in enumerate(self.conv_blocks):
+            print("="*30)
+            conv_block.prettyprint(i)
+
+        for (i, dense_layer) in enumerate(self.dense_layer):
+            print("="*30)
+            dense_layer.prettyprint(i)
+
 
 class ConvBlockGene:
     """
@@ -306,6 +330,20 @@ class ConvBlockGene:
             self.pooling.pool_stride
         )
 
+    def prettyprint(self, block_nr):
+        """
+        Prints a formatted string of this gene's parameters.
+        """
+        print(
+            f"""
+            Conv block {block_nr}:
+            {self.n_filters} filters
+            filter size {self.filter_size}
+            {"BatchNorm" if self.batch_norm else "No BatchNorm"}
+            """
+        )
+        self.pooling.prettyprint()
+
 
 class PoolingGene:
     """
@@ -356,6 +394,13 @@ class PoolingGene:
         Returns a duplicate clone (by value) of this gene.
         """
         return PoolingGene(self.pool_type, self.pool_size, self.pool_stride)
+
+    def prettyprint(self):
+        """
+        Prints a formatted string of this gene's parameters.
+        """
+        print(f"{self.pool_type.name.capitalize()}Pooling, " + \
+              f"size = {self.pool_size}, stride = {self.pool_stride}")
 
 
 class DenseLayerGene:
@@ -409,6 +454,17 @@ class DenseLayerGene:
         Returns a duplicate clone (by value) of this gene.
         """
         return DenseLayerGene(self.n_neurons)
+
+    def prettyprint(self, layer_nr):
+        """
+        Prints a formatted string of this gene's parameters.
+        """
+        print(
+            f"""
+            Dense layer {layer_nr}:
+            {self.n_neurons} neurons
+            """
+        )
 
 
 def apply_polynomial_mutation(x, lo, hi, eta):
