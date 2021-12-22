@@ -22,6 +22,8 @@ class CnnGenome:
         # in the phenotype if there are no conv blocks.
         self.pool_before_dense = PoolingGene()
 
+        self.fitness = 777
+
     @staticmethod
     def random(limits):
         """

@@ -15,9 +15,9 @@ class NasctyParamLimits:
         self.filter_size_min = 1
         self.filter_size_max = 100
         self.pool_size_min = 2
-        self.pool_size_max = 100
+        self.pool_size_max = 50
         self.pool_stride_min = 2
-        self.pool_stride_max = 100
+        self.pool_stride_max = 50
 
         self.n_dense_neurons_min = 1
         self.n_dense_neurons_max = 30

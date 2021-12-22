@@ -50,7 +50,8 @@ def nascty_cnns_experiment(
     hw=False, select_fun="tournament", t_size=3, polynom_mutation_eta=20,
     crossover_type=CrossoverType.ONEPOINT,
     metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY,
-    truncation_proportion=1.0, n_atk_folds=1, noise=0.0, desync=0):
+    truncation_proportion=1.0, n_valid_folds=1, n_atk_folds=100, noise=0.0,
+    desync=0):
     """
     Runs a NASCTY CNNs genetic algorithm experiment on the ASCAD data set
     and stores the results in a directory specific to this experiment.
@@ -80,16 +81,17 @@ def nascty_cnns_experiment(
     nascty_ga = NasctyCnnsGeneticAlgorithm(
         max_gens, pop_size, parallelise, select_fun, t_size,
         polynom_mutation_eta, crossover_type, metric_type,
-        truncation_proportion, n_atk_folds, remote
+        truncation_proportion, n_valid_folds, remote
     )
 
-    shuffle = n_atk_folds > 1
+    shuffle = n_valid_folds > 1
     best_indiv = nascty_ga.run(
         x_train, y_train, pt_train, x_val, y_val, pt_val, k_train, subkey_idx,
         shuffle, balanced=True, hw=hw, static_seed=False 
     )
 
-    nn = best_indiv.phenotype(hw=hw)
+    print("Commencing training of best network.")
+    nn = train(best_indiv.phenotype(hw=hw), x_train, y_train)
 
     print("Commencing evaluation on attack set.")
     y_pred_probs = nn.predict(x_atk)
@@ -1707,6 +1709,21 @@ def construct_neat_dirs(argss, only_print=False):
     for args in argss:
         exp_name = gen_neat_exp_name(*args)
         dir_path = f"neat_results/{exp_name}"
+
+        if not os.path.exists(dir_path) and not only_print:
+            os.mkdir(dir_path)
+
+        print(f"Constructed {dir_path}")
+
+
+def construct_nascty_dirs(argss, only_print=False):
+    """
+    Constructs a directory for the experiment names corresponding to the given
+    NASCTY-CNNs argument lists.
+    """
+    for args in argss:
+        exp_name = gen_nascty_exp_name(*args)
+        dir_path = f"nascty_results/{exp_name}"
 
         if not os.path.exists(dir_path) and not only_print:
             os.mkdir(dir_path)

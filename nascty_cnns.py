@@ -116,9 +116,10 @@ class NasctyCnnsGeneticAlgorithm:
 
             # Rest of GA main loop, i.e. selection & offspring production
             self.population[:self.pop_size] = self.selection_method()
-            self.population[self.pop_size:] = self.produce_offpsring(
-                self.param_limits, self.crossover_type
-            )
+            if gen < self.max_gens - 1:
+                self.population[self.pop_size:] = self.produce_offpsring(
+                    self.param_limits, self.crossover_type
+                )
 
             # Track useful information
             self.best_fitness_per_gen[gen] = best_fitness
@@ -357,7 +358,7 @@ def evaluate_nascty_fitness(genome, x_train, y_train, pt_train, x_valid,
         y_train = tf.keras.utils.to_categorical(y_train, n_classes)
         y_valid = tf.keras.utils.to_categorical(y_valid, n_classes)
 
-    nn = train(genome.phenotype(), x_train, y_train, epochs=50)
+    nn = train(genome.phenotype(), x_train, y_train, verbose=0, epochs=20)
 
     return compute_fitness(
         nn, x_valid, y_valid, pt_valid, metric_type, true_subkey, len(x_valid),
