@@ -197,6 +197,8 @@ class CnnGenome:
         Constructs and returns the phenotype corresponding to this genome, i.e.
         its expression as a Keras CNN model.
         """
+        self.force_valid_cnn()
+
         inputs = Input(shape=(700, 1))
 
         for (i, gene) in enumerate(self.conv_blocks):
@@ -221,9 +223,33 @@ class CnnGenome:
         for (i, gene) in enumerate(self.dense_layers):
             x = Dense(gene.n_neurons, kernel_initializer=gene.weight_init, activation=gene.act_func, name=f'dense{i}')(x)
 
-        x = Dense(9 if hw else 256, activation='softmax', name='output_layer')
+        x = Dense(9 if hw else 256, activation='softmax', name='output_layer')(x)
 
         return Model(inputs, x)
+
+    def force_valid_cnn(self):
+        """
+        Enforces parameter values of ConvBlock genes so that the resulting CNN
+        is valid, i.e. so that it never produces a feature map of size 0.
+        """
+        self.correct_pool_sizes()
+
+        # Remove layers that still don't have valid parameters
+        self.conv_blocks = [
+            block for block in self.conv_blocks
+            if block.pooling.pool_size != 0
+        ]
+
+    def correct_pool_sizes(self):
+        """
+        Adjusts the pool size of all convolution blocks where this is necessary
+        due to the pool size being larger than the previous layer's feature map
+        size.
+        """
+        inp_size = 700
+        for conv_block in self.conv_blocks:
+            conv_block.pooling.pool_size = min(conv_block.pooling.pool_size, inp_size)
+            inp_size = conv_block.output_map_size(inp_size)
 
     def clone(self):
         """
@@ -316,9 +342,20 @@ class ConvBlockGene:
         g0.n_filters, g1.n_filters = randomise_order(self.n_filters, other.n_filters)
         g0.filter_size, g1.filter_size = randomise_order(self.filter_size, other.filter_size)
         g0.batch_norm, g1.batch_norm = randomise_order(self.batch_norm, other.batch_norm)
-        g0.pooling, g1.pooling = self.pooling.crossover(other.pooling)
+        g0.pooling, g1.pooling = self.pooling.param_crossover(other.pooling)
 
         return (g0, g1)
+
+    def output_map_size(self, n_inputs):
+        """
+        Returns the size the first dimension of the feature map would have
+        after applying this convolution block to a feature map with `n_inputs`
+        inputs. 
+        """
+        output_size = int(n_inputs/self.pooling.pool_stride)
+        if self.pooling.pool_size > self.pooling.pool_stride:
+            output_size -= int(self.pooling.pool_size/self.pooling.pool_stride)
+        return output_size
 
     def clone(self):
         """
@@ -395,7 +432,8 @@ class PoolingGene:
         Prints a formatted string of this gene's parameters.
         """
         print(f"{self.pool_type.name.capitalize()}Pooling\n" + \
-              f"size = {self.pool_size}\nstride = {self.pool_stride}")
+              f"pool size = {self.pool_size}\n" + \
+              f"pool stride = {self.pool_stride}")
 
 
 class DenseLayerGene:
