@@ -119,6 +119,13 @@ from result_processing import combine_grid_search_results
 #    use_sgd=False, use_avg_pooling=True, seed=77, pool_param=4, noise=0.05,
 #    desync=15
 # )
+# =============================================================================
+nascty_configs = [
+    # psize, max_gens, hw, polynom_mut_eta, co_type, trunc_pop, noise, desync
+    (26, 10, False, 20, CrossoverType.ONEPOINT, 0.6, 0.0, 0),
+    (100, 100, False, 20, CrossoverType.ONEPOINT, 0.5, 0.0, 0)
+]
+cf = nascty_configs[int(sys.argv[1])]
 
 
 def dual_parallel_weight_evo_experiment(args, remote=True):
@@ -132,9 +139,13 @@ def dual_parallel_weight_evo_experiment(args, remote=True):
 
 
 if __name__ == "__main__":
+    # nascty_cnns_experiment(
+    #     run_idx=77, max_gens=3, pop_size=4, parallelise=True, remote=False, hw=False, select_fun="tournament", t_size=3, polynom_mutation_eta=20, crossover_type=CrossoverType.ONEPOINT,
+    #     metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY, truncation_proportion=0.5, n_valid_folds=1, n_atk_folds=5, noise=0.0, desync=0
+    # )
     nascty_cnns_experiment(
-        run_idx=77, max_gens=3, pop_size=4, parallelise=True, remote=False, hw=False, select_fun="tournament", t_size=3, polynom_mutation_eta=20, crossover_type=CrossoverType.ONEPOINT,
-        metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY, truncation_proportion=0.5, n_valid_folds=1, n_atk_folds=5, noise=0.0, desync=0
+        run_idx=int(sys.argv[2]), max_gens=cf[1], pop_size=cf[0], parallelise=True, remote=True, hw=cf[2], select_fun="tournament", t_size=3, polynom_mutation_eta=cf[3], crossover_type=cf[4],
+        metric_type=MetricType.CATEGORICAL_CROSS_ENTROPY, truncation_proportion=cf[5], n_valid_folds=1, n_atk_folds=5, noise=cf[6], desync=cf[7]
     )
 
     # custom_params = (POPULATION_SIZE, MUTATION_POWER, MUTATION_RATE, MUTATION_POWER_DECAY, FITNESS_INHERITANCE_DECAY, 315,
@@ -287,6 +298,12 @@ if __name__ == "__main__":
     #     (500, 50, False,  True,  "ascad", False, 0, 0,  False, gen_neat_exp_name_suffix(19200, 0, "double-init-layer"))
     # ]
     # construct_neat_dirs(neat_argss)
+
+    # nascty_argss = [
+    #     # pop_size, max_gens, hw, polynom_mutation_eta, crossover_type, truncation_proportion, noise, desync
+    #     (100, 100, False, 20, CrossoverType.ONEPOINT, 0.5, 0.0, 0)
+    # ]
+    # construct_nascty_dirs(nascty_argss)
 
     # infoneat_reproducability_test(remote=False)
     # neat_cce_progress_analysis()
