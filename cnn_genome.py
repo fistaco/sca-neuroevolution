@@ -482,6 +482,7 @@ def apply_polynom_mutation_with_prob(x, lo, hi, eta, mut_prob):
     """
     if np.random.uniform() < mut_prob:
         return apply_polynomial_mutation(x, lo, hi, eta)
+    return x
 
 
 def apply_boolean_mutation_with_prob(b, mut_prob):
@@ -489,8 +490,7 @@ def apply_boolean_mutation_with_prob(b, mut_prob):
     Sets bool `b` to the opposite of its current boolean value with probability
     `mut_prob`.
     """
-    if np.random.uniform() < mut_prob:
-        return not b
+    return not b if np.random.uniform() < mut_prob else b
 
 
 def randomise_order(x0, x1):
