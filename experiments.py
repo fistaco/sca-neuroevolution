@@ -87,7 +87,7 @@ def nascty_cnns_experiment(
     shuffle = n_valid_folds > 1
     best_indiv = nascty_ga.run(
         x_train, y_train, pt_train, x_val, y_val, pt_val, k_train, subkey_idx,
-        shuffle, balanced=True, hw=hw, static_seed=False 
+        shuffle, balanced=True, hw=hw, static_seed=True
     )
 
     print("Commencing training of best network.")
@@ -324,7 +324,8 @@ def run_ga_for_grid_search(max_gens, pop_size, mut_power, mut_rate,
             pickle.dump(results, f)
 
 
-def results_from_exp_names(exp_names, exp_labels, file_tag, neat=False):
+def results_from_exp_names(exp_names, exp_labels, file_tag, neat=False,
+                           nascty=False):
     """
     Generates a fitness progress plot and key rank progress plot for one or
     more weight evolution experiments with the given parameters. This method
@@ -361,7 +362,7 @@ def results_from_exp_names(exp_names, exp_labels, file_tag, neat=False):
                 best_inc_kr = inc_kr
                 best_fit_progress_arr = best_fitness_per_gen
 
-                if neat:
+                if neat or nascty:
                     best_mean_krs = results[-2]
 
         plot_gens_vs_fitness(exp_labels[i], best_fit_progress_arr)
