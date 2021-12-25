@@ -90,8 +90,9 @@ class CnnGenome:
         p0_cutoff = self.onepoint_crossover_cutoff(p0_layers)
         p1_cutoff = self.onepoint_crossover_cutoff(p1_layers)
 
-        c0_layers = p0_layers[:p0_cutoff] + p1_layers[p1_cutoff:]
-        c1_layers = p1_layers[:p1_cutoff] + p0_layers[p0_cutoff:]
+        # Take the cutoff and limit the total number at 5 layers
+        c0_layers = (p0_layers[:p0_cutoff] + p1_layers[p1_cutoff:])[:5]
+        c1_layers = (p1_layers[:p1_cutoff] + p0_layers[p0_cutoff:])[:5]
 
         return (c0_layers, c1_layers)
 
