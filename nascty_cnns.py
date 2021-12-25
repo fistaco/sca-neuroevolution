@@ -98,7 +98,6 @@ class NasctyCnnsGeneticAlgorithm:
 
         while gen < self.max_gens and best_fitness > self.min_fitness:
             seed = gen if not static_seed else 77
-            np.random.seed(seed)
 
             # if self.metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
             #     y_atk = tf.keras.utils.to_categorical(y_atk,(9 if hw else 256))
@@ -224,13 +223,18 @@ class NasctyCnnsGeneticAlgorithm:
         Selects potentially strong individuals by performing fitness-based
         tournaments.
         """
+        new_population = np.empty(self.pop_size, dtype=object)
+
+        # Lock in the first slot with the fittest individual
+        best_idx = np.argmin(self.fitnesses)
+        new_population[0] = self.population[best_idx]
+
         # Potentially use a truncated population with the best fitnesses
         trunc_size = round(self.truncation_proportion*self.full_pop_size)
-        trunc_idxs = np.argsort(self.fitnesses)[:trunc_size]
+        trunc_idxs = (np.argsort(self.fitnesses)[1:])[:trunc_size]
         pop, fits = self.population[trunc_idxs], self.fitnesses[trunc_idxs]
 
-        new_population = np.empty(self.pop_size, dtype=object)
-        for i in range(self.pop_size):
+        for i in range(1, self.pop_size):  # Start at 1 to account for elitism
             # Pick 3 random participants and pick the fittest one
             idxs = np.random.choice(trunc_size, self.t_size, replace)
             new_population[i] = self.fitness_tournament(idxs, pop, fits)
@@ -352,13 +356,15 @@ def evaluate_nascty_fitness(genome, x_train, y_train, pt_train, x_valid,
         according to the given `metric_type`.
     """
     np.random.seed(seed)
+    tf.random.set_seed(seed)
 
     n_classes = 9 if hw else 256
     if metric_type == MetricType.CATEGORICAL_CROSS_ENTROPY:
         y_train = tf.keras.utils.to_categorical(y_train, n_classes)
         y_valid = tf.keras.utils.to_categorical(y_valid, n_classes)
 
-    nn = train(genome.phenotype(), x_train, y_train, verbose=0, epochs=20)
+    nn = train(genome.phenotype(), x_train, y_train, verbose=0, epochs=10)
+    # nn = genome.phenotype()
 
     return compute_fitness(
         nn, x_valid, y_valid, pt_valid, metric_type, true_subkey, len(x_valid),
