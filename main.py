@@ -121,9 +121,18 @@ from result_processing import combine_grid_search_results
 # )
 # =============================================================================
 nascty_configs = [
-    # psize, max_gens, hw, polynom_mut_eta, co_type, trunc_pop, noise, desync
+    # psize, max_gens, hw, polynom_mut_eta, co_type, trunc_prop, noise, desync
     (26, 10, False, 20, CrossoverType.ONEPOINT, 0.6, 0.0, 0),
-    (100, 100, False, 20, CrossoverType.ONEPOINT, 0.5, 0.0, 0)
+    # Grid search parameters start here (@ configs[1])
+    (26, 10, False, 20, CrossoverType.ONEPOINT, 0.5, 0.0, 0),
+    (26, 10, False, 20, CrossoverType.ONEPOINT, 1.0, 0.0, 0),
+    (26, 10, False, 20, CrossoverType.PARAMETERWISE, 0.5, 0.0, 0),
+    (26, 10, False, 20, CrossoverType.PARAMETERWISE, 1.0, 0.0, 0),
+    (26, 10, False, 40, CrossoverType.ONEPOINT, 0.5, 0.0, 0),
+    (26, 10, False, 40, CrossoverType.ONEPOINT, 1.0, 0.0, 0),
+    (26, 10, False, 40, CrossoverType.PARAMETERWISE, 0.5, 0.0, 0),
+    (26, 10, False, 40, CrossoverType.PARAMETERWISE, 1.0, 0.0, 0)
+    # Grid search parameters end here (@ configs[8])
 ]
 cf = nascty_configs[int(sys.argv[1])]
 
@@ -304,6 +313,11 @@ if __name__ == "__main__":
     #     (100, 100, False, 20, CrossoverType.ONEPOINT, 0.5, 0.0, 0)
     # ]
     # construct_nascty_dirs(nascty_argss)
+
+    # exp_names = ["nascty-ps26-10gens-id-eta20-onepoint_co-tp0.6-noise0.0-desync0"]
+    # exp_labels = ["Resource test (ps52, 10 gens)"]
+    # file_tag = "NASCTY_ASCAD"
+    # results_from_exp_names(exp_names, exp_labels, file_tag, neat=True)
 
     # infoneat_reproducability_test(remote=False)
     # neat_cce_progress_analysis()
