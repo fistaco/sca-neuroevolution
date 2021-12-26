@@ -367,14 +367,14 @@ def results_from_exp_names(exp_names, exp_labels, file_tag, neat=False,
 
         plot_gens_vs_fitness(exp_labels[i], best_fit_progress_arr)
         fit_progress_arrays.append(best_fit_progress_arr)
-        if neat:
+        if neat or nascty:
             mean_krss.append(best_mean_krs)
 
     labels = np.repeat(exp_labels, n_repeats)
     plot_var_vs_key_rank(labels, inc_krs, box=True, var_name="Experiment")
     plot_gens_vs_fitness(file_tag, *fit_progress_arrays,
                          labels=exp_labels)
-    if neat:
+    if neat or nascty:
         plot_n_traces_vs_key_rank(file_tag, *mean_krss, labels=exp_labels)
 
 
