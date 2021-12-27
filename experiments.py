@@ -339,9 +339,16 @@ def results_from_exp_names(exp_names, exp_labels, file_tag, neat=False,
     fit_progress_arrays = []
     mean_krss = []
     inc_krs = []
+
+    # Track variables for mean inter-exp comparison
+    best_mean_inc_kr = 3.0
+    best_exp_name = ""
+
     for (i, exp_name) in enumerate(exp_names):
         best_inc_kr = 3.0
         best_fit_progress_arr = None
+
+        mean_inc_kr = 0.0
 
         dir_path = f"res/{exp_name}"
         for j in range(n_repeats):
@@ -351,6 +358,7 @@ def results_from_exp_names(exp_names, exp_labels, file_tag, neat=False,
             with open(filepath, "rb") as f:
                 results = pickle.load(f)
             inc_kr = results[-1]
+            mean_inc_kr += inc_kr/n_repeats
             best_fitness_per_gen = results[2] if neat else results[1]
             if neat:
                 # Recall our NEAT implementation only uses fitness maximisation
@@ -365,10 +373,16 @@ def results_from_exp_names(exp_names, exp_labels, file_tag, neat=False,
                 if neat or nascty:
                     best_mean_krs = results[-2]
 
+        if mean_inc_kr < best_mean_inc_kr:
+            best_mean_inc_kr = mean_inc_kr
+            best_exp_name = exp_name
+
         plot_gens_vs_fitness(exp_labels[i], best_fit_progress_arr)
         fit_progress_arrays.append(best_fit_progress_arr)
         if neat or nascty:
             mean_krss.append(best_mean_krs)
+
+    print(f"Best exp = {best_exp_name} with mean inc. kr {best_mean_inc_kr}")
 
     labels = np.repeat(exp_labels, n_repeats)
     plot_var_vs_key_rank(labels, inc_krs, box=True, var_name="Experiment")
