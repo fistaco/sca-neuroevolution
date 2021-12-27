@@ -236,7 +236,7 @@ class NasctyCnnsGeneticAlgorithm:
 
         for i in range(1, self.pop_size):  # Start at 1 to account for elitism
             # Pick 3 random participants and pick the fittest one
-            idxs = np.random.choice(trunc_size, self.t_size, replace)
+            idxs = np.random.choice(len(pop), self.t_size, replace)
             new_population[i] = self.fitness_tournament(idxs, pop, fits)
 
         return new_population
