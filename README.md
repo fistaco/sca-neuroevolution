@@ -1,0 +1,6 @@
+This repository contains the source code for the experiments in the master thesis _Neuroevolution Applied to Side-Channel Attacks_, written by Fiske Schijlen and supervised by Dr. ir. Stjepan Picek.
+
+The contents of the ```.py``` files are self-explanatory, with the exception of ```genetic_algorithm.py```, which specifically implements the weight evolution GA and relevant methods. Furthermore, relevant Keras model files can be found in the ```trained_networks``` directory. Finally, note that this repository does not contain the ASCAD and ChipWhisperer data sets, which you will have to place in their appropriate locations yourself.
+
+# Usage
+To run specific experiments described in the thesis, import the relevant method from ```experiments.py``` in ```main.py``` and call it. To run the methods with your own choice of parameter settings, construct an instance of your desired method's class and call its ```run(...)``` method, which will return the best genome resulting from the algorithm's run.
