@@ -355,7 +355,6 @@ def evaluate_nascty_fitness(genome, x_train, y_train, pt_train, x_valid,
         An `np.float64` or `int` object representing the `genome`'s fitness
         according to the given `metric_type`.
     """
-    np.random.seed(seed)
     tf.random.set_seed(seed)
 
     n_classes = 9 if hw else 256

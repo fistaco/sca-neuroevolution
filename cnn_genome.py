@@ -1,5 +1,4 @@
 from copy import deepcopy
-from enum import Enum
 
 from keras import Input, Model
 from keras.layers import AveragePooling1D, MaxPooling1D, Conv1D, BatchNormalization, Dense, Flatten

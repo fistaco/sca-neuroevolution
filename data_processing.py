@@ -10,8 +10,6 @@ from constants import HW
 def load_data(dataset_name, hw=False, remote=False, noise_std=0.0, desync=0):
     load_funcs = {
         "ascad": load_prepared_ascad_vars,
-        "ascad_desync50": 7,
-        "ascad_desync100": 7,
         "cw": load_chipwhisperer_data,
         "dpav4": load_dpav4
     }
@@ -19,19 +17,16 @@ def load_data(dataset_name, hw=False, remote=False, noise_std=0.0, desync=0):
     # Load (x_train, y_train, pt_train, k_train, x_atk, y_atk, pt_atk, k_atk).
     # Some methods only return 1 key, in which case we reformat the tuple.
     x = list(load_funcs[dataset_name](hw=hw, remote=remote))
+    x_atk_idx = 3 if len(x) == 7 else 4
 
     # Load train and attack traces with countermeasures if desired
     if noise_std > 0.0:
-        # x[0] = np.load(f"{dataset_name}_train_traces_noisy.npy")
-        # x[3] = np.load(f"{dataset_name}_atk_traces_noisy.npy")
         x[0] = apply_noise(x[0], std=noise_std)
-        x[3] = apply_noise(x[3], std=noise_std)
+        x[x_atk_idx] = apply_noise(x[x_atk_idx], std=noise_std)
 
     if desync > 0:
-        # x[0] = np.load(f"{dataset_name}_train_traces_desync{desync}.npy")
-        # x[3] = np.load(f"{dataset_name}_atk_traces_desync{desync}.npy")
         x[0] = apply_desync(x[0], desync_level=desync)
-        x[3] = apply_desync(x[3], desync_level=desync)
+        x[x_atk_idx] = apply_desync(x[x_atk_idx], desync_level=desync)
 
     if len(x) == 7:
         return (x[0], x[1], x[2], x[-1], x[3], x[4], x[5], x[6])
